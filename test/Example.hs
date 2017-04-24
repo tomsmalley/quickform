@@ -11,17 +11,17 @@ import qualified Data.Text as T
 import Text.Read (readMaybe)
 
 newtype AName = AName Text deriving Show
-type MyNameF = UnvalidatedForm AName :<: NamedForm "name" TextForm
+type MyNameF = UnvalidatedForm AName :<: NamedField "name" TextField
 data AgeError = NoParse | InvalidAge | TooOld | TooYoung
   deriving (Eq, Ord, Show)
 type MyAgeF = ValidatedForm AgeError (Int, Int)
           :<: YearForm :&: MonthForm
-type YearForm = NamedForm "years" TextForm
-type MonthForm = NamedForm "months" TextForm
+type YearForm = NamedField "years" TextField
+type MonthForm = NamedField "months" TextField
 
 data Job = Plumber | Haskeller | Journalist deriving (Read, Show)
 data JobError = NoPlumbers deriving (Eq, Ord, Show)
-type MyJobF = ValidatedForm JobError Job :<: NamedForm "job" (EnumForm Job)
+type MyJobF = ValidatedForm JobError Job :<: NamedField "job" (EnumField Job)
 
 type MyForm = MyNameF :&: MyAgeF :&: MyJobF
 type MyUForm = MyNameF :&: MyJobF

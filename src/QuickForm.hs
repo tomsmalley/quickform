@@ -6,14 +6,14 @@ module QuickForm
 
   -- * Form types
   , Form
-  , Form' (Form)
+  , Form' (Form, unForm)
   , reform
   , Reduced (..)
 
   , ValidatedForm
   , UnvalidatedForm
-  , NamedForm
-  , FormType (..)
+  , NamedField
+  , FieldType (..)
 
   -- * Validation
   , Validate (..)

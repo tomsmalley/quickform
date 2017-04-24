@@ -37,9 +37,9 @@ instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :&: b) where
   emptySetErrors = emptySetErrors :&: emptySetErrors
 
 type family ValidationType form where
-  ValidationType (UnvalidatedForm a :<: b) = Reduce 'Hs b -> a
-  ValidationType (ValidatedForm e a :<: b) = Reduce 'Hs b -> Validate e a
-  ValidationType (NamedForm n ('EnumForm a)) = Text -> Validate EnumError a
+  ValidationType (UnvalidatedForm a :<: b) = Form 'Hs b -> a
+  ValidationType (ValidatedForm e a :<: b) = Form 'Hs b -> Validate e a
+  ValidationType (NamedField n ('EnumField a)) = Text -> Validate EnumError a
 
 -- Any FormSet can be validated
 class Validation a where
@@ -67,14 +67,14 @@ class
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (NamedForm n 'TextForm) where
+instance ValidateAll' 'Neither (NamedField n 'TextField) where
   validateAll' = reform
 
-instance ValidateAll' 'Neither (NamedForm n 'HiddenForm) where
+instance ValidateAll' 'Neither (NamedField n 'HiddenField) where
   validateAll' = reform
 
 -- | Base enum
-instance Read a => ValidateAll' 'Neither (NamedForm n ('EnumForm a)) where
+instance Read a => ValidateAll' 'Neither (NamedField n ('EnumField a)) where
     validateAll' (Form t) = case readMaybe $ unpack t of
       Nothing -> Left $ Form $ Just $ S.singleton EnumReadFailed
       Just a  -> Right $ Form a
@@ -88,7 +88,7 @@ instance
     validateAll' (Form b)
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form err
-        Right (Form v) -> Right . Form $ validate @form v
+        Right form -> Right . Form $ validate @form form
 
 -- Unvalidated parent without sub validation
 instance
@@ -96,8 +96,8 @@ instance
   , Validation form
   , form ~ (UnvalidatedForm a :<: b)
   ) => ValidateAll' 'Neither (UnvalidatedForm a :<: b) where
-    validateAll' (Form b)
-      = reform $ validate @form <$> validateAll @b (Form b)
+    validateAll'
+      = Form . validate @form . validateAll @b . reform
 
 -- Validated parent with sub validation
 instance
@@ -110,7 +110,7 @@ instance
     validateAll' (Form b)
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form $ mempty :<: err
-        Right (Form v) -> case validate @form v of
+        Right form -> case validate @form form of
           Invalid err -> Left $ Form $ Just err :<: emptySetErrors
           Valid v' -> Right $ Form v'
 
@@ -121,7 +121,7 @@ instance
   , form ~ (ValidatedForm e a :<: b)
   ) => ValidateAll' 'First (ValidatedForm e a :<: b) where
     validateAll' (Form b)
-      = case validate @form $ unForm $ validateAll @b (Form b) of
+      = case validate @form $ validateAll @b (Form b) of
           Invalid err -> Left $ Form $ Just err
           Valid v' -> Right $ Form v'
 

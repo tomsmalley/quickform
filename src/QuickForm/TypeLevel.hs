@@ -55,8 +55,8 @@ type family FindError form :: WhichSide where
 
 -- | Find if a given form has validated forms somewhere inside it
 type family HasError (form :: Type) :: Bool where
-  HasError (NamedForm n ('EnumForm a)) = 'True
-  HasError (NamedForm n f) = 'False
+  HasError (NamedField n ('EnumField a)) = 'True
+  HasError (NamedField n f) = 'False
   HasError (ValidatedForm e a) = 'True
   HasError (UnvalidatedForm a) = 'False
   HasError (ValidatedForm e a :<: _) = 'True
@@ -78,21 +78,21 @@ type family ReduceErr' (which :: WhichSide) form :: Type where
   ReduceErr' 'Both (a :&: b) = ReduceErr a :&: ReduceErr b
 
   ReduceErr' w (ValidatedForm e _) = Maybe (Set e)
-  ReduceErr' w (NamedForm _ ('EnumForm _)) = Maybe (Set EnumError)
+  ReduceErr' w (NamedField _ ('EnumField _)) = Maybe (Set EnumError)
 
 -- | Get the shallowest output type of an element
 type family OutputType form :: Type where
   OutputType (ValidatedForm _ o) = o
   OutputType (UnvalidatedForm o) = o
-  OutputType (NamedForm _ 'TextForm) = Text
-  OutputType (NamedForm _ 'HiddenForm) = Text
-  OutputType (NamedForm _ ('EnumForm o)) = o
+  OutputType (NamedField _ 'TextField) = Text
+  OutputType (NamedField _ 'HiddenField) = Text
+  OutputType (NamedField _ ('EnumField o)) = o
 
 -- | Get the raw type of an element
 type family RawType form :: Type where
-  RawType (NamedForm _ 'TextForm) = Text
-  RawType (NamedForm _ 'HiddenForm) = Text
-  RawType (NamedForm _ ('EnumForm o)) = Text
+  RawType (NamedField _ 'TextField) = Text
+  RawType (NamedField _ 'HiddenField) = Text
+  RawType (NamedField _ ('EnumField o)) = Text
 
 type family Reduce (t :: Reduced) form :: Type where
   Reduce 'Err a = ReduceErr a
@@ -108,11 +108,11 @@ data ValidatedForm (err :: Type) (output :: Type)
 data UnvalidatedForm (output :: Type)
 
 -- | Terminal form
-data NamedForm (name :: Symbol) (form :: FormType)
-data FormType
-  = TextForm
-  | HiddenForm
-  | forall output. EnumForm (output :: Type)
+data NamedField (name :: Symbol) (form :: FieldType)
+data FieldType
+  = TextField
+  | HiddenField
+  | forall output. EnumField (output :: Type)
 
 data EnumError = EnumReadFailed
   deriving (Eq, Show, Ord, Generic)
