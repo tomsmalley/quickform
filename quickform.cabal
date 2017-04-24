@@ -1,0 +1,56 @@
+name:                quickform
+version:             0.1.0.0
+license:             BSD3
+license-file:        LICENSE
+author:              Tom Smalley
+maintainer:          tfsmalley@gmail.com
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+
+  exposed-modules:     QuickForm
+                     , QuickForm.BranchValidation
+                     , QuickForm.Form
+                     , QuickForm.Lenses
+                     , QuickForm.Many
+                     , QuickForm.Sub
+                     , QuickForm.TypeLevel
+                     , QuickForm.Validation
+
+  build-depends:       base >= 4.9 && < 5
+                     , aeson
+                     , containers
+                     , deepseq
+                     , text
+
+  default-language:    Haskell2010
+
+  default-extensions: ConstraintKinds
+                    , DataKinds
+                    , FlexibleInstances
+                    , FlexibleContexts
+                    , MultiParamTypeClasses
+                    , ScopedTypeVariables
+                    , TypeApplications
+                    , TypeFamilies
+                    , TypeOperators
+
+test-suite quickform-test
+  type:                exitcode-stdio-1.0
+
+  hs-source-dirs:      test
+
+  main-is:             Spec.hs
+
+  build-depends:       base
+                     , quickform
+                     , hspec
+                     , QuickCheck
+                     , containers
+                     , text
+
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
