@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric, ExistentialQuantification, KindSignatures
-           , UndecidableInstances #-}
+           , TypeFamilies, UndecidableInstances #-}
 
 module QuickForm.TypeLevel where
 

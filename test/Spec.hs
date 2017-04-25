@@ -3,7 +3,6 @@
 import Test.Hspec
 import Test.QuickCheck
 import QuickForm
-import Example
 
 main :: IO ()
 main = hspec $ do

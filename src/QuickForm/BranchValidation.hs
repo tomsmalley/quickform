@@ -1,5 +1,6 @@
-{-# LANGUAGE AllowAmbiguousTypes, UndecidableInstances #-}
+{-# LANGUAGE CPP, AllowAmbiguousTypes, TypeFamilies, UndecidableInstances #-}
 {-# OPTIONS_HADDOCK hide #-}
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module QuickForm.BranchValidation where
 
@@ -28,13 +29,24 @@ class ValidatePartial' (errorLocation :: WhichSide) form sub where
   validatePartial' :: Form 'Raw form -> Form 'Err form
 
 -- | Validated parents require full validation
-instance
+instance {-# OVERLAPPABLE #-}
   ( ValidateAll form
-  , EmptySetErrors (Form 'Err form)
+  , EmptySetErrors (Reduce 'Err form)
   , form ~ (ValidatedForm e a :<: b)
-  ) => ValidatePartial' 'Both (ValidatedForm e a :<: b) sub where
+  ) => ValidatePartial' err (ValidatedForm e a :<: b) sub where
     validatePartial'
-      = either id (const emptySetErrors) . validateAll
+      = either id (const $ Form emptySetErrors) . validateAll
+
+-- | Terminal instance for validated forms
+-- This instance is to resolve the overlap between (ValidatedForm e a :<: b) sub
+-- and a a
+instance {-# OVERLAPPABLE #-}
+  ( ValidateAll form
+  , EmptySetErrors (Reduce 'Err form)
+  , form ~ (ValidatedForm e a :<: b)
+  ) => ValidatePartial' err (ValidatedForm e a :<: b) (ValidatedForm e a :<: b) where
+    validatePartial'
+      = either id (const $ Form emptySetErrors) . validateAll
 
 -- Unnamed unvalidated parents just validate the relavant sub sub
 instance
@@ -45,7 +57,7 @@ instance
 
 -- | Found the sub, just validate it all
 -- TODO check hasError is always correct
-instance
+instance {-# OVERLAPPABLE #-}
   ( ValidateAll a
   , EmptySetErrors (ReduceErr a)
   , HasError a ~ 'True
@@ -75,7 +87,7 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'False
   ) => ValidatePartialEither' 'First 'First (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b))
+  validatePartialEither' (Form (a :&: _))
     = reform $ validatePartial @a @sub (Form a)
 
 -- Validate left branch when right branch only has errors
@@ -85,7 +97,7 @@ instance
   , HasError b ~ 'True
   , Monoid (Reduce 'Err b)
   ) => ValidatePartialEither' 'First 'Second (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b)) = Form mempty
+  validatePartialEither' _ = Form mempty
 
 -- Validate right branch when left branch only has errors
 instance
@@ -94,7 +106,7 @@ instance
   , HasError b ~ 'False
   , Monoid (Reduce 'Err a)
   ) => ValidatePartialEither' 'Second 'First (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b)) = Form mempty
+  validatePartialEither' _ = Form mempty
 
 -- Validate right branch when left branch doesn't have errors
 instance
@@ -102,7 +114,7 @@ instance
   , HasError a ~ 'False
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'Second 'Second (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b))
+  validatePartialEither' (Form (_ :&: b))
     = reform $ validatePartial @b @sub (Form b)
 
 -- Validate left branch when both branches have errors
@@ -112,7 +124,7 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'First 'Both (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b))
+  validatePartialEither' (Form (a :&: _))
     = Form $ unForm (validatePartial @a @sub (Form a)) :&: mempty
 
 -- Validate right branch when both branches have errors
@@ -122,17 +134,24 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'Second 'Both (a :&: b) sub where
-  validatePartialEither' (Form (a :&: b))
+  validatePartialEither' (Form (_ :&: b))
     = Form $ mempty :&: unForm (validatePartial @b @sub (Form b))
+
+-- Custom type errors ----------------------------------------------------------
+
+#ifndef DEV
 
 -- | Catch all to show nicer errors
 instance {-# OVERLAPPABLE #-} ValidatePartialError form sub
   => ValidatePartial' err form sub where
     validatePartial' = error "unreachable"
+
 -- | Catch all to show nicer errors
 instance {-# OVERLAPPABLE #-} ValidatePartialError form sub
   => ValidatePartialEither' next err form sub where
     validatePartialEither' = error "unreachable"
+
+#endif
 
 -- | Wrapper for 'ValidatePartialError''
 type ValidatePartialError form sub

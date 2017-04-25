@@ -11,10 +11,13 @@ extensions and imports we will be needing.
 
 ```haskell
 
-> {-# LANGUAGE DataKinds, InstanceSigs, TypeOperators #-}
+> {-# LANGUAGE DataKinds, FlexibleInstances, OverloadedStrings
+>            , TypeApplications, TypeOperators, TypeSynonymInstances #-}
+> {-# OPTIONS_GHC -Wno-missing-signatures #-}
 
-> module Example where
+> module Main where
 
+> import Control.Lens
 > import Data.Maybe (catMaybes, isJust)
 > import Data.Text (Text)
 > import qualified Data.Set as S
@@ -22,6 +25,11 @@ extensions and imports we will be needing.
 > import QuickForm
 
 ```
+
+To load this file, clone the repository and run
+`stack ghci quickform:test:README`. Code might appear slightly strange on
+github, this is due to mixing literate haskell and markdown syntax to the best
+of my ability.
 
 In this example, our form should allow a user to sign up with their email
 and password, along with their favourite colour and film. We might wish to
@@ -51,10 +59,14 @@ Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
-> type EnterPasswordField = NamedField "password" TextField
-> type RepeatPasswordField = NamedField "password-repeat" TextField
+> type EnterPasswordField = NamedField "password" 'TextField
+> type RepeatPasswordField = NamedField "password-repeat" 'TextField
 
 ```
+
+Note the tick before `TextField` denotes it is a DataKinds promoted constructor.
+You can omit this and turn of the `unticked-promoted-constructors` warning, but
+for this example I'll leave everything explicit.
 
 We want different type of `FieldType` to construct the colour field. We encode
 any enumerable field (dropdown box, radio fields) in `EnumField t` where `t` is
@@ -62,7 +74,7 @@ the type we want to use to provide the field data and get back after validation.
 
 ```haskell
 
-> type ColourField = NamedField "colour" (EnumField Colour)
+> type ColourField = NamedField "colour" ('EnumField Colour)
 
 ```
 
@@ -78,7 +90,7 @@ with no potential for failure.
 
 ```haskell
 
-> type FilmField = UnvalidatedForm Film :<: NamedField "film" TextField
+> type FilmField = UnvalidatedForm Film :<: NamedField "film" 'TextField
 
 ```
 
@@ -99,7 +111,7 @@ failure and the right hand side representing success.
 
 ```haskell
 
-> type EmailField = ValidatedForm EmailError Email :<: NamedField "email" TextField
+> type EmailField = ValidatedForm EmailError Email :<: NamedField "email" 'TextField
 
 ```
 
@@ -174,7 +186,7 @@ missing when they are not used in that particular representation. For example,
 the error type omits the unvalidated film field completely, and the haskell type
 drops the inner `NamedField` information.
 
- # Validation class
+ ### Validation class
 
 As I mentioned earlier, all fields need validating in order to get to our
 haskell types. The logic for validation is captured in the conveniently named
@@ -182,8 +194,15 @@ type class, `Validation form`. It has one function, `validate`, the type of
 which changes depending on what `form` is in the instance head. There are only
 two valid uses: on parent forms like `UnvalidatedForm a :<: b` or `ValidatedForm
 e a :<: b`. In the first case, `validate :: Form 'Hs b -> a`, and the second,
-`validate :: Form 'Hs b -> Validate e a`. `Validate` is isomorphic to `Either`,
-with `Invalid` instead of `Left` and `Valid` instead of `Right`.
+`validate :: Form 'Hs b -> Validate e a`. `Validate e a` is isomorphic to
+`Either (Set e) a`, with `Invalid` instead of `Left` and `Valid` instead of
+`Right`. We always return a `Set` of errors, because many errors might be
+applicable at once.
+
+It is important to note that this type class encapsulates validation as a pure
+function, which can be called on *both* the server and the client. Additional
+serverside validation is done in the handler, after performing full form
+validation.
 
 Let's have a look at our example; first off, the unvalidated film field. The sub
 field in this case is `NamedField "film" 'TextField`, so the haskell type will
@@ -214,29 +233,245 @@ a single text field, but it is validated! So the return type changes to
 
 ```
 
-Finally we come to the double password field.
+Finally we come to the double password field. We want the password to be at
+least 8 characters long, and both fields to match. We just pattern match on
+`:&:` to extract the `Text`s.
+
+```haskell
+instance Validation PasswordField where
+  validate (Form (t :&: t'))
+    | S.null set = Valid $ Password t
+    | otherwise  = Invalid set
+    where set = S.fromList $ catMaybes [tooShort, matches]
+          tooShort = if T.length t >= 8 then Nothing else Just TooShort
+          matches = if t == t' then Nothing else Just Unmatching
+```
+
+With that last example it may strike you as being somewhat dangerous, given that
+you could easily mix up two of the raw fields since they are the same type. For
+a simple example where both fields should be identical, it isn't such an issue,
+but for differing fields it could be a problem.
+Indeed, we get no more safety than a typical haskell function like `Text -> Text
+-> a`, but there is another option: lenses!
+
+ ### Lenses into forms
+
+QuickForm exposes a single overloaded lens, `subform`. It allows you to lens
+into any part of a form purely by the type. First we will make an example `Raw`
+entry for `UserForm`.
+
+```haskell
+
+> dog :: Form 'Raw UserForm
+> dog = Form $ "dave@dog.com"
+>           :&: ("woof" :&: "woof2")
+>           :&: "Bone"
+>           :&: "Beethoven"
+
+```
+
+Now let's view some fields:
+
+```haskell
+
+> rawEmailField = dog ^. subform @EmailField
+> rawPasswordField = dog ^. subform @PasswordField
+> rawEnterPasswordField = dog ^. subform @EnterPasswordField
+
+```
+
+The `subform` lens needs the type specifying using the `TypeApplications`
+language extension. It's similar to if `subform` was defined to take a `Proxy`
+argument, but it takes less typing. You can load this into ghci and test it out:
+
+```
+ghci> :t rawEmailField
+rawEmailField :: Text
+ghci> rawEmailField
+"dave@dog.com"
+ghci> rawPasswordField
+"woof" :&: "woof2"
+ghci> rawEnterPasswordField
+"woof"
+```
+
+What if we try to access a nonsense field, or just a field which doesn't
+actually exist in the form?
+
+```
+ghci> dog ^. subform @Int
+
+<interactive>:45:8: error:
+    • Attempted access of sub form
+        ‘Int’
+      But it does not exist in the given form
+        ‘(ValidatedForm EmailError Email
+          :<: NamedField "email" 'TextField)
+         :&: (PasswordField :&: (ColourField :&: FilmField))’
+    • In the second argument of ‘(^.)’, namely ‘subform @Int’
+      In the expression: dog ^. subform @Int
+      In an equation for ‘it’: it = dog ^. subform @Int
+```
+
+We get a nice custom type error. `subform` also works on haskell and error
+forms:
+
+```haskell
+
+> cat :: Form 'Hs UserForm
+> cat = Form $ Email "top@cat.com"
+>          :&: Password "meow"
+>          :&: Purple
+>          :&: Film "The Pink Panther"
+
+```
+```
+ghci> cat ^. subform @EmailField
+Email "top@cat.com"
+```
+
+For both haskell and error type forms, fields which are in the raw form can be
+erased, so what happens when we try to view them?
+
+```
+ghci> cat ^. subform @EnterPasswordField
+
+<interactive>:63:7: error:
+    • Attempted access of erased sub form
+        ‘NamedField "password" 'TextField’
+      It exists in the given form
+        ‘ValidatedForm PasswordError Password
+         :<: (EnterPasswordField :&: RepeatPasswordField)’
+      But not after the form is reduced to its haskell type
+        ‘Password’
+    • In the second argument of ‘(^.)’, namely
+        ‘subform @EnterPasswordField’
+      In the expression: cat ^. subform @EnterPasswordField
+      In an equation for ‘it’: it = cat ^. subform @EnterPasswordField
+```
+
+Another custom type error, telling us that `EnterPasswordField` has been erased.
+We can rewrite the `Validation PasswordField` instance now, in this case it
+isn't such a win, but this is just an example!
 
 ```haskell
 
 > instance Validation PasswordField where
->   validate (Form (t :&: t'))
->     | S.null set = Valid $ Password t
->     | otherwise  = Invalid set
->     where set = S.fromList $ catMaybes [tooShort, matching]
->           tooShort = if T.length t >= 8 then Nothing else Just TooShort
->           matching = if t == t' then Nothing else Just Unmatching
+>   validate passwords
+>     | S.null s = Valid $ Password enterP
+>     | otherwise  = Invalid s
+>     where s = S.fromList $ catMaybes [tooShort, matches]
+>           tooShort = if T.length enterP >= 8 then Nothing else Just TooShort
+>           matches = if enterP == repeatP then Nothing else Just Unmatching
+>           enterP = passwords ^. subform @EnterPasswordField
+>           repeatP = passwords ^. subform @RepeatPasswordField
 
 ```
 
- # segway to lenses
+ ### Full form validation
 
- # full validation
+QuickForm provides a function, `validateAll`, which handles full form
+validation, that is, conversion to the haskell type or error type. The return
+type depends on if any field is `Validated`. If the form has no fields which can
+fail, it has the type `Form 'Raw f -> Form 'Hs f` and is just a direct
+conversion. In any other case the type is `Form 'Raw f -> Either (Form 'Err f)
+(Form 'Hs f)`. Provided you've written all of the required `Validation`
+instances, which we have:
 
- # partial validation
+```
+ghci> validateAll raw
+Left (Form (Just (fromList [])
+        :&: Just (fromList [TooShort,Unmatching])
+        :&: Just (fromList [EnumReadFailed])))
+```
+
+Validation failed, as we would expect for the example given. Let's make one that
+passes the rules:
+
+```haskell
+
+> monkey :: Form 'Raw UserForm
+> monkey = Form $ "matt@monkey.com"
+>             :&: ("ilikebananas" :&: "ilikebananas")
+>             :&: "Yellow"
+>             :&: "Planet of the Apes"
+
+```
+```
+ghci> validateAll monkey
+Right (Form (Email "matt@monkey.com"
+         :&: Password "ilikebananas"
+         :&: Yellow
+         :&: Film "Planet of the Apes"))
+```
+
+This function must always be called on the server after receiving the raw values
+from the client, then you can simply pattern match on the result. If you have
+some impure validation to do, for example checking if an email already exists in
+your database, you should do this in your handler and then return an appropriate
+response. TODO: provide full server / client example with servant.
+
+The function should be called by QuickForm's front end library when the user
+submits a form, preventing a needless roundtrip to find errors. Only when it
+passes should a request be sent.
+
+ ### Partial form validation
+
+A common feature of HTML forms is validation as you type. We could call
+`validateAll` at every field update, but that may be slow with larger forms.
+Additionally, typing anything into the first field would cause the later fields
+to also be validated, as if you'd pressed the submit button. Ideally we want to
+be able to validate a single branch of the form, identified by which field was
+updated. In comes `validateBranch :: Form 'Raw form -> Form 'Err form`. Because
+this does not validate the entire form, we always return an error form. This
+function can't be called by forms with no fields that can fail.
+
+You might have noticed that in the earlier error form example, each of the error
+sets was wrapped in `Maybe`. This seems rather pointless on the surface, since
+we can encode the lack of errors with an empty set. In actuality, we can use
+`Nothing` to represent "not checked" and `Just mempty` to represent "passed
+validation". This is important when it comes to combining error form structures
+on the front end, to prevent error messages being wrongly cleared or sticking
+around when they should be deleted.
+
+```haskell
+
+> vemail = validateBranch @EmailField dog
+> venterp = validateBranch @EnterPasswordField dog
+> vcolour = validateBranch @ColourField dog
+> vfilm = validateBranch @FilmField dog
+
+```
+```
+ghci> vemail
+Form (Just (fromList []) :&: Nothing :&: Nothing)
+ghci> venterp
+Form (Nothing :&: Just (fromList [TooShort,Unmatching]) :&: Nothing)
+ghci> vcolour
+Form (Nothing :&: Nothing :&: Just (fromList [EnumReadFailed]))
+ghci> vfilm
+Form (Nothing :&: Nothing :&: Nothing)
+```
+
+You should hopefully be able to see that the `Just` fields are the ones we asked
+it to validate, and the unrelated `Nothing` fields are untouched.
+
+ ### Other notes
+
+ #### Field uniqueness
+
+The library assumes that each of your types for your fields are unique. This
+*should always* be the case naturally thanks to the `Symbol` in the terminal
+fields - each control on a HTML form should have a different name!
 
 
 
 
 
+---
 
+For the test suite:
+
+> main :: IO ()
+> main = putStrLn $ "\nREADME.md"
 

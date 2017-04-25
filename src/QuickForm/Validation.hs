@@ -1,4 +1,5 @@
-{-# LANGUAGE DeriveGeneric, AllowAmbiguousTypes, UndecidableInstances #-}
+{-# LANGUAGE DeriveGeneric, AllowAmbiguousTypes, TypeFamilies
+           , UndecidableInstances #-}
 {-# OPTIONS_HADDOCK hide #-}
 
 module QuickForm.Validation where
@@ -129,14 +130,14 @@ instance
 instance
   ( ValidateAll a, HasError a ~ 'True
   , ValidateAll b, HasError b ~ 'True
-  , Monoid (ReduceErr a)
-  , Monoid (ReduceErr b)
+  , EmptySetErrors (ReduceErr a)
+  , EmptySetErrors (ReduceErr b)
   ) => ValidateAll' 'Both (a :&: b) where
     validateAll' (Form (a :&: b))
       = case (validateAll @a (Form a), validateAll @b (Form b)) of
              (Left a', Left b') -> Left . Form $ unForm a' :&: unForm b'
-             (Left a', _) -> Left . Form $ unForm a' :&: mempty
-             (_, Left b') -> Left . Form $ mempty :&: unForm b'
+             (Left a', _) -> Left . Form $ unForm a' :&: emptySetErrors
+             (_, Left b') -> Left . Form $ emptySetErrors :&: unForm b'
              (Right a', Right b') -> Right . Form $ unForm a' :&: unForm b'
 
 -- Pair type where the first/left side has validation

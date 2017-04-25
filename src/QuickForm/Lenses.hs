@@ -1,4 +1,5 @@
-{-# LANGUAGE AllowAmbiguousTypes, RankNTypes, UndecidableInstances #-}
+{-# LANGUAGE CPP, AllowAmbiguousTypes, TypeFamilies, RankNTypes
+           , UndecidableInstances #-}
 {-# OPTIONS_HADDOCK hide #-}
 
 module QuickForm.Lenses where
@@ -41,16 +42,20 @@ instance {-# OVERLAPPING #-} FormLens (a :&: b) (a :&: b) 'Hs where
   subform' f (Form b) = Form <$> f b
   {-# INLINE subform' #-}
 -- | Terminal lens, sub form, 'Hs' type
-instance FormLens (a :<: b) (a :<: b) 'Hs where
+instance {-# OVERLAPPING #-} FormLens (a :<: b) (a :<: b) 'Hs where
+  subform' f (Form b) = Form <$> f b
+  {-# INLINE subform' #-}
+-- | Terminal lens, 'Hs' type
+instance {-# OVERLAPPING #-} FormLens a a 'Hs where
   subform' f (Form b) = Form <$> f b
   {-# INLINE subform' #-}
 
--- | Terminal lens, pair form, 'Raw' type
-instance {-# OVERLAPPING #-} FormLens (a :&: b) (a :&: b) 'Raw where
-  subform' f (Form b) = Form <$> f b
-  {-# INLINE subform' #-}
 -- | Terminal lens, sub form, 'Raw' type
 instance {-# OVERLAPPING #-} FormLens (a :<: b) (a :<: b) 'Raw where
+  subform' f (Form b) = Form <$> f b
+  {-# INLINE subform' #-}
+-- | Terminal lens, 'Raw' type
+instance {-# OVERLAPPING #-} FormLens a a 'Raw where
   subform' f (Form b) = Form <$> f b
   {-# INLINE subform' #-}
 -- | Lens into sub form of 'Raw' type
@@ -64,6 +69,10 @@ instance {-# OVERLAPPING #-} FormLens (a :&: b) (a :&: b) 'Err where
   {-# INLINE subform' #-}
 -- | Terminal lens, sub form, 'Err' type
 instance {-# OVERLAPPING #-} FormLens (a :<: b) (a :<: b) 'Err where
+  subform' f (Form b) = Form <$> f b
+  {-# INLINE subform' #-}
+-- | Terminal lens, 'Err' type
+instance {-# OVERLAPPING #-} FormLens a a 'Err where
   subform' f (Form b) = Form <$> f b
   {-# INLINE subform' #-}
 -- | Lens into sub form of 'Err' type
@@ -185,7 +194,9 @@ instance (FormLens b c 'Err, HasError a ~ 'False, HasError b ~ 'True)
       = fmap reform . subform' @b @c @'Err f . reform
     {-# INLINE formEither' #-}
 
--- Errors ----------------------------------------------------------------------
+-- Custom type errors ----------------------------------------------------------
+
+#ifndef DEV
 
 -- | Catch all to show nicer errors
 instance {-# OVERLAPPABLE #-} LensError form sub r
@@ -196,6 +207,8 @@ instance {-# OVERLAPPABLE #-} LensError form sub r
 instance {-# OVERLAPPABLE #-} LensError form sub r
   => FormLens form sub r where
     subform' = error "unreachable"
+
+#endif
 
 -- | Wrapper for 'LensError''
 type LensError form sub r = LensError' form sub (HasSub form sub) r
