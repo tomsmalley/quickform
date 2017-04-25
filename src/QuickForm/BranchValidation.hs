@@ -44,24 +44,57 @@ instance {-# OVERLAPPABLE #-}
   ( ValidateAll form
   , EmptySetErrors (Reduce 'Err form)
   , form ~ (ValidatedForm e a :<: b)
-  ) => ValidatePartial' err (ValidatedForm e a :<: b) (ValidatedForm e a :<: b) where
+  ) => ValidatePartial' 'First (ValidatedForm e a :<: b) (ValidatedForm e a :<: b) where
+    validatePartial'
+      = either id (const $ Form emptySetErrors) . validateAll
+-- | Terminal instance for validated forms
+-- This instance is to resolve the overlap between (ValidatedForm e a :<: b) sub
+-- and a a
+instance {-# OVERLAPPABLE #-}
+  ( ValidateAll form
+  , EmptySetErrors (Reduce 'Err form)
+  , form ~ (ValidatedForm e a :<: b)
+  ) => ValidatePartial' 'Both (ValidatedForm e a :<: b) (ValidatedForm e a :<: b) where
     validatePartial'
       = either id (const $ Form emptySetErrors) . validateAll
 
--- Unnamed unvalidated parents just validate the relavant sub sub
+-- Unnamed unvalidated parents just partially validate the relavant sub form
 instance
   ( ValidatePartial b sub
   , HasError b ~ 'True
   ) => ValidatePartial' 'Second (UnvalidatedForm a :<: b) sub where
     validatePartial' = reform . validatePartial @b @sub . reform
 
--- | Found the sub, just validate it all
--- TODO check hasError is always correct
+-- | Terminal instance for unvalidated forms
+-- This instance is to resolve the overlap between (UnvalidatedForm a :<: b) sub
+-- and a a
+instance {-# OVERLAPPABLE #-}
+  ( ValidateAll form
+  , EmptySetErrors (Reduce 'Err form)
+  , form ~ (UnvalidatedForm a :<: b)
+  , HasError b ~ 'True
+  ) => ValidatePartial' 'Second (UnvalidatedForm a :<: b) (UnvalidatedForm a :<: b) where
+    validatePartial'
+      = either id (const $ Form emptySetErrors) . validateAll @form
+
+-- | Found the form, just validate it all
 instance {-# OVERLAPPABLE #-}
   ( ValidateAll a
   , EmptySetErrors (ReduceErr a)
   , HasError a ~ 'True
-  ) => ValidatePartial' err a a where
+  ) => ValidatePartial' 'First a a where
+    validatePartial' = either id (const $ Form emptySetErrors) . validateAll @a
+instance {-# OVERLAPPABLE #-}
+  ( ValidateAll a
+  , EmptySetErrors (ReduceErr a)
+  , HasError a ~ 'True
+  ) => ValidatePartial' 'Second a a where
+    validatePartial' = either id (const $ Form emptySetErrors) . validateAll @a
+instance {-# OVERLAPPABLE #-}
+  ( ValidateAll a
+  , EmptySetErrors (ReduceErr a)
+  , HasError a ~ 'True
+  ) => ValidatePartial' 'Both a a where
     validatePartial' = either id (const $ Form emptySetErrors) . validateAll @a
 
 -- | Validate single branch of pair
