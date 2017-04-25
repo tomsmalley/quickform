@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds, OverloadedStrings, TypeApplications #-}
 {-# OPTIONS_GHC -fdefer-type-errors #-}
 
+import Control.Lens
 import qualified Data.Set as S
 import Data.Text
 import Test.Hspec
@@ -50,8 +51,25 @@ vfieldErrEmpty = Form $ Just S.empty
 vfieldHs :: Form 'Hs VField
 vfieldHs = Form $ NT "pass"
 
+type TestField2 = NamedField "test2" 'TextField
+type BasePair = TestField :&: TestField2
+
+basePairRaw :: Form 'Raw BasePair
+basePairRaw = Form $ "f1" :&: "f2"
+
+basePairHs :: Form 'Hs BasePair
+basePairHs = Form $ "f1" :&: "f2"
+
+
 main :: IO ()
 main = hspec $ do
+
+  describe "Lenses" $ do
+
+    describe "Raw pair terminal lens" $ do
+      it "works" $ do
+        basePair ^. subform @BasePair `shouldBe` unForm basePairRaw
+
 
   describe "Validation" $ do
 
@@ -69,6 +87,10 @@ main = hspec $ do
       it "fails validation correctly" $ do
         validateAll vfieldRawFail `shouldBe` Left vfieldErr
 
+    describe "Base pair" $ do
+      it "validates correctly" $ do
+        validateAll basePairRaw `shouldBe` basePairHs
+
   describe "Branch validation" $ do
 
     describe "Single text field form" $ do
@@ -79,6 +101,10 @@ main = hspec $ do
       it "fails branch validation in the typechecker" $ do
         shouldNotTypecheck $ validateBranch @UField ufieldRaw
 
+    describe "Base pair" $ do
+      it "fails branch validation in the typechecker" $ do
+        shouldNotTypecheck $ validateBranch @BasePair basePairRaw
+
     describe "Single validated parent form" $ do
       it "passes top level branch validation correctly" $ do
         validateBranch @VField vfieldRawPass `shouldBe` vfieldErrEmpty
@@ -88,9 +114,6 @@ main = hspec $ do
         validateBranch @TestField vfieldRawPass `shouldBe` vfieldErrEmpty
       it "fails sub form branch validation correctly" $ do
         validateBranch @TestField vfieldRawFail `shouldBe` vfieldErr
-
-  describe "Lenses" $ do
-    it "not implemented" False
 
   describe "Joining errors" $ do
     it "not implemented" False

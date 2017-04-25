@@ -472,6 +472,10 @@ fields - each control on a HTML form should have a different name!
 
 For the test suite:
 
+```haskell
+
 > main :: IO ()
 > main = putStrLn $ "\nREADME.md"
+
+```
 
