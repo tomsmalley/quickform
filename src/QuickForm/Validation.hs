@@ -37,14 +37,14 @@ instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :<: b) where
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :&: b) where
   emptySetErrors = emptySetErrors :&: emptySetErrors
 
-type family ValidationType form where
-  ValidationType (UnvalidatedForm a :<: b) = Form 'Hs b -> a
-  ValidationType (ValidatedForm e a :<: b) = Form 'Hs b -> Validate e a
-  ValidationType (NamedField n ('EnumField a)) = Text -> Validate EnumError a
+type family ValidationType (form :: QuickForm) where
+  ValidationType (Unvalidated a b) = Form 'Hs b -> a
+  ValidationType (Validated e a b) = Form 'Hs b -> Validate e a
+  ValidationType (Named n ('EnumField a)) = Text -> Validate EnumError a
 
 -- Any FormSet can be validated
-class Validation a where
-  validate :: ValidationType a
+class Validation (f :: QuickForm) where
+  validate :: ValidationType f
 
 -- Validation ------------------------------------------------------------------
 
@@ -56,26 +56,25 @@ validateAll = validateAll'
 -- | For guiding GHC to the correct types
 type ValidateAll f = ValidateAll' (FindError f) f
 
-type family ValidateAllType (hasError :: Bool) form where
+type family ValidateAllType (hasError :: Bool) (form :: QuickForm) where
   ValidateAllType 'False f = Form 'Hs f
   ValidateAllType 'True f = Either (Form 'Err f) (Form 'Hs f)
 
 -- | Need to pull errorLocation out into the class head so that we can match on
 -- it for the different cases
-class
-  ( FindError f ~ errorLocation
-  ) => ValidateAll' (errorLocation :: WhichSide) f where
+class FindError f ~ errorLocation
+  => ValidateAll' (errorLocation :: WhichSide) (f :: QuickForm) where
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (NamedField n 'TextField) where
+instance ValidateAll' 'Neither (Named n 'TextField) where
   validateAll' = reform
 
-instance ValidateAll' 'Neither (NamedField n 'HiddenField) where
+instance ValidateAll' 'Neither (Named n 'HiddenField) where
   validateAll' = reform
 
 -- | Base enum
-instance Read a => ValidateAll' 'Neither (NamedField n ('EnumField a)) where
+instance Read a => ValidateAll' 'Neither (Named n ('EnumField a)) where
     validateAll' (Form t) = case readMaybe $ unpack t of
       Nothing -> Left $ Form $ Just $ S.singleton EnumReadFailed
       Just a  -> Right $ Form a
@@ -84,8 +83,8 @@ instance Read a => ValidateAll' 'Neither (NamedField n ('EnumField a)) where
 instance
   ( ValidateAll b, HasError b ~ 'True
   , Validation form
-  , form ~ (UnvalidatedForm a :<: b)
-  ) => ValidateAll' 'Second (UnvalidatedForm a :<: b) where
+  , form ~ (Unvalidated a b)
+  ) => ValidateAll' 'Second (Unvalidated a b) where
     validateAll' (Form b)
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form err
@@ -95,8 +94,8 @@ instance
 instance
   ( ValidateAll b, HasError b ~ 'False
   , Validation form
-  , form ~ (UnvalidatedForm a :<: b)
-  ) => ValidateAll' 'Neither (UnvalidatedForm a :<: b) where
+  , form ~ (Unvalidated a b)
+  ) => ValidateAll' 'Neither (Unvalidated a b) where
     validateAll'
       = Form . validate @form . validateAll @b . reform
 
@@ -104,10 +103,10 @@ instance
 instance
   ( ValidateAll b, HasError b ~ 'True
   , Validation form
-  , form ~ (ValidatedForm e a :<: b)
+  , form ~ (Validated e a b)
   , EmptySetErrors (ReduceErr b)
   , Ord e
-  ) => ValidateAll' 'Both (ValidatedForm e a :<: b) where
+  ) => ValidateAll' 'Both (Validated e a b) where
     validateAll' (Form b)
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form $ mempty :<: err
@@ -119,8 +118,8 @@ instance
 instance
   ( ValidateAll b, HasError b ~ 'False
   , Validation form
-  , form ~ (ValidatedForm e a :<: b)
-  ) => ValidateAll' 'First (ValidatedForm e a :<: b) where
+  , form ~ (Validated e a b)
+  ) => ValidateAll' 'First (Validated e a b) where
     validateAll' (Form b)
       = case validate @form $ validateAll @b (Form b) of
           Invalid err -> Left $ Form $ Just err
@@ -132,7 +131,7 @@ instance
   , ValidateAll b, HasError b ~ 'True
   , EmptySetErrors (ReduceErr a)
   , EmptySetErrors (ReduceErr b)
-  ) => ValidateAll' 'Both (a :&: b) where
+  ) => ValidateAll' 'Both (a :+: b) where
     validateAll' (Form (a :&: b))
       = case (validateAll @a (Form a), validateAll @b (Form b)) of
              (Left a', Left b') -> Left . Form $ unForm a' :&: unForm b'
@@ -144,7 +143,7 @@ instance
 instance
   ( ValidateAll a, HasError a ~ 'True
   , ValidateAll b, HasError b ~ 'False
-  ) => ValidateAll' 'First (a :&: b) where
+  ) => ValidateAll' 'First (a :+: b) where
     validateAll' (Form (a :&: b))
       = case validateAll @a (Form a) of
           Left a' -> Left $ reform a'
@@ -155,7 +154,7 @@ instance
 instance
   ( ValidateAll a, ValidateAll b
   , HasError a ~ 'False, HasError b ~ 'True
-  ) => ValidateAll' 'Second (a :&: b) where
+  ) => ValidateAll' 'Second (a :+: b) where
     validateAll' (Form (a :&: b))
       = case validateAll @b (Form b) of
           Left b' -> Left $ reform b'
@@ -166,7 +165,7 @@ instance
 instance
   ( ValidateAll a, HasError a ~ 'False
   , ValidateAll b, HasError b ~ 'False
-  ) => ValidateAll' 'Neither (a :&: b) where
+  ) => ValidateAll' 'Neither (a :+: b) where
     validateAll' (Form (a :&: b))
       = Form $ unForm a' :&: unForm b'
         where a' = validateAll @a (Form a)

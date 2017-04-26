@@ -8,12 +8,17 @@ module QuickForm
   , Form
   , Form' (Form, unForm)
   , reform
-  , Reduced (..)
+  , Raw
+  , Hs
+  , Err
 
-  , ValidatedForm
-  , UnvalidatedForm
-  , NamedField
-  , FieldType (..)
+  , Validated
+  , Unvalidated
+  , Named
+  , (:+:)
+  , TextField
+  , HiddenField
+  , EnumField
 
   -- * Validation
   , Validate (..)
@@ -29,6 +34,7 @@ module QuickForm
 
   -- * Lenses
   , subform
+  , topfield
 
   ) where
 

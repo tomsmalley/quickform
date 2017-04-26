@@ -12,7 +12,7 @@ extensions and imports we will be needing.
 ```haskell
 
 > {-# LANGUAGE DataKinds, FlexibleInstances, OverloadedStrings
->            , TypeApplications, TypeOperators, TypeSynonymInstances #-}
+>            , TypeApplications, TypeOperators #-}
 > {-# OPTIONS_GHC -Wno-missing-signatures #-}
 
 > module Main where
@@ -45,10 +45,12 @@ obtain some data types like so:
 
 ```
 
-Now let's build our form type.
+Now let's build our form type. We have a type level few combinators available to
+us, all of which have kind `QuickForm`, made available by DataKinds. This ensures
+you can only construct logically valid form structures.
 
-First, you need to know about `NamedField`. These are the most basic form
-elements, and just represent concrete HTML fields. `NamedField` takes two type
+First, you need to know about `Named`. These are the most basic form
+elements, and just represent concrete HTML fields. `Named` takes two type
 parameters, the first of kind `Symbol` (which is a type level string), and the
 second of kind `FieldType`. The `Symbol` is used as the field's HTML `name`. The
 `FieldType` denotes the element used to display it, governing how values are
@@ -59,14 +61,10 @@ Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
-> type EnterPasswordField = NamedField "password" 'TextField
-> type RepeatPasswordField = NamedField "password-repeat" 'TextField
+> type EnterPasswordField = Named "password" TextField
+> type RepeatPasswordField = Named "password-repeat" TextField
 
 ```
-
-Note the tick before `TextField` denotes it is a DataKinds promoted constructor.
-You can omit this and turn of the `unticked-promoted-constructors` warning, but
-for this example I'll leave everything explicit.
 
 We want different type of `FieldType` to construct the colour field. We encode
 any enumerable field (dropdown box, radio fields) in `EnumField t` where `t` is
@@ -74,27 +72,25 @@ the type we want to use to provide the field data and get back after validation.
 
 ```haskell
 
-> type ColourField = NamedField "colour" ('EnumField Colour)
+> type ColourField = Named "colour" (EnumField Colour)
 
 ```
 
-Now let's look at the sub form combinator `:<:` and unvalidated forms. Our
+Now let's look at the combinator `Unvalidated a f`, which wraps a sub form
+`f :: QuickForm` and allows conversion of the sub form to type `a`. Our
 `Film` field is a good example: we don't care about what the user enters, we
-just want to put it into our `Film` newtype. `UnvalidatedForm` captures this
-idea: it takes a single parameter of the type we want to get from the sub form.
+just want to put it into our `Film` newtype.
 
-`a :<: b` denotes that `b` is a sub form of `a`, such that `a` depends on the
-values of `b` to perform validation. All forms *must* perform validation in
-order for you to get your haskell types, unvalidated forms just convert to it
-with no potential for failure.
+All forms *must* perform validation in order for you to get haskell types back,
+unvalidated forms just convert to it with no potential for failure.
 
 ```haskell
 
-> type FilmField = UnvalidatedForm Film :<: NamedField "film" 'TextField
+> type FilmField = Unvalidated Film (Named "film" TextField)
 
 ```
 
-Similarly we can use `ValidatedForm` for our `Email` type. We'd like to validate
+Similarly we can use `Validated e a f` for our `Email` type. We'd like to validate
 this to check it is a valid email address, so we make a simple sum type
 encapsulating some properties we want to check:
 
@@ -104,22 +100,23 @@ encapsulating some properties we want to check:
 
 ```
 
-`ValidatedForm` takes two type parameters, the first is a type that encodes our
-errors, the second is the validated type (similar to `UnvalidatedForm`). You can
-think of this as being like `Either`, with the left hand side representing
-failure and the right hand side representing success.
+`Validated e a f` takes three type parameters, the first is a type that encodes
+our errors, the second is the validated type (similar to `Unvalidated`), and the
+third is the sub form `f :: QuickForm`. You can remember the order of the first two
+arguments by thinking of the similarity with `Either`, with the left hand side
+representing failure and the right hand side representing success.
 
 ```haskell
 
-> type EmailField = ValidatedForm EmailError Email :<: NamedField "email" 'TextField
+> type EmailField = Validated EmailError Email (Named "email" TextField)
 
 ```
 
-Now we need to introduce the "pair" combinator `a :&: b`. This encodes two
+Now we need to introduce the "pair" combinator `a :+: b`. This encodes two
 equal level fields or sub forms. This can be used in a sub form combinator, and
 doing so will mean the parent form depends on all values in order to be
 validated. You can also chain them together to make forms of arbitrary length,
-think of it like a tuple type's comma.
+think of it like a general tuple type.
 
 Our password field will need some potential errors, let's keep it simple:
 
@@ -130,12 +127,11 @@ Our password field will need some potential errors, let's keep it simple:
 ```
 
 We construct the password form from the two base fields that we defined earlier.
-Note that the fixity of `:&:` is higher than `:<:`.
 
 ```haskell
 
-> type PasswordField = ValidatedForm PasswordError Password
->                  :<: EnterPasswordField :&: RepeatPasswordField
+> type PasswordField = Validated PasswordError Password
+>                     (EnterPasswordField :+: RepeatPasswordField)
 
 ```
 
@@ -143,58 +139,59 @@ Bringing the fields together to make the whole form gives:
 
 ```haskell
 
-> type UserForm = EmailField :&: PasswordField :&: ColourField :&: FilmField
+> type UserForm = EmailField :+: PasswordField :+: ColourField :+: FilmField
 
 ```
 
 So far this is quite simple, we just defined the shape of our form at the type
 level. But we need a way of operating at the term level in order to actually do
 anything. Enter `Form`. `Form` is a newtype, wrapping a type function which
-strips superfluous information out of our form definition. It also carries some
-metadata (the reduction type, and the original form type).
+strips superfluous information out of our form definition, and "unlifting" it
+from kind `QuickForm` to kind `Type`, so we can actually use if. It also carries
+some metadata (the reduction kind, and the original form kind).
 
 `Form` takes two type parameters, the first parameter of kind `Reduced` (tells
-us how the form has been reduced), and the second of any form.
-The `Reduced` kind comprises of types: `Raw`, `Err`, or `Hs`.
-* `Raw` is the raw input type, only encoding the actual form values.
+us how the form has been reduced), and the second of kind `QuickForm`.
+The `Reduced` kind comprises of types:
+* `Raw` encodes the raw input type, only encoding the actual form values.
 * `Err` encodes any potential errors of the form.
 * `Hs` encodes the final "haskell" values which we would like.
 
-Loading this file into GHCI within the context of this repository, you can take
+Loading this file into GHCi within the context of this repository, you can take
 a look at what these mean (these examples are slightly reformatted):
 
 ```
-ghci> :kind! Form 'Raw UserForm
-Form 'Raw UserForm :: *
-= Form' 'Raw UserForm (Text :&: (Text :&: Text) :&: Text :&: Text)
+ghci> :kind! Form Raw UserForm
+Form Raw UserForm :: *
+= Form' Raw UserForm (Text :&: (Text :&: Text) :&: Text :&: Text)
 
-ghci> :kind! Form 'Err UserForm
-Form 'Err UserForm :: *
-= Form' 'Err UserForm
+ghci> :kind! Form Err UserForm
+Form Err UserForm :: *
+= Form' Err UserForm
    ( Maybe (Set EmailError)
  :&: Maybe (Set PasswordError)
  :&: Maybe (Set EnumError))
 
-ghci> :kind! Form 'Hs UserForm
-Form 'Hs UserForm :: *
-= Form' 'Hs UserForm (Email :&: Password :&: Colour :&: Film)
+ghci> :kind! Form Hs UserForm
+Form Hs UserForm :: *
+= Form' Hs UserForm (Email :&: Password :&: Colour :&: Film)
 ```
 
 `:kind!` allows you to evaluate type functions in ghci. You may notice that the
 structure of these is roughly like the type we laid out earlier, but with parts
 missing when they are not used in that particular representation. For example,
 the error type omits the unvalidated film field completely, and the haskell type
-drops the inner `NamedField` information.
+drops the inner `Named` information.
 
  ### Validation class
 
 As I mentioned earlier, all fields need validating in order to get to our
 haskell types. The logic for validation is captured in the conveniently named
-type class, `Validation form`. It has one function, `validate`, the type of
+type class, `Validation f`. It has one function, `validate`, the type of
 which changes depending on what `form` is in the instance head. There are only
-two valid uses: on parent forms like `UnvalidatedForm a :<: b` or `ValidatedForm
-e a :<: b`. In the first case, `validate :: Form 'Hs b -> a`, and the second,
-`validate :: Form 'Hs b -> Validate e a`. `Validate e a` is isomorphic to
+two valid uses: on parent forms like `Unvalidated a b` or `Validated
+e a b`. In the first case, `validate :: Form Hs b -> a`, and the second,
+`validate :: Form Hs b -> Validate e a`. `Validate e a` is isomorphic to
 `Either (Set e) a`, with `Invalid` instead of `Left` and `Valid` instead of
 `Right`. We always return a `Set` of errors, because many errors might be
 applicable at once.
@@ -205,7 +202,7 @@ serverside validation is done in the handler, after performing full form
 validation.
 
 Let's have a look at our example; first off, the unvalidated film field. The sub
-field in this case is `NamedField "film" 'TextField`, so the haskell type will
+field in this case is `Named "film" TextField`, so the haskell type will
 just be `Text`. Since it is unvalidated, we can always produce a `Film` value
 given a `Text` value.
 
@@ -254,7 +251,7 @@ but for differing fields it could be a problem.
 Indeed, we get no more safety than a typical haskell function like `Text -> Text
 -> a`, but there is another option: lenses!
 
- ### Lenses into forms
+ ### Lens into forms
 
 QuickForm exposes a single overloaded lens, `subform`. It allows you to lens
 into any part of a form purely by the type. First we will make an example `Raw`
@@ -262,7 +259,7 @@ entry for `UserForm`.
 
 ```haskell
 
-> dog :: Form 'Raw UserForm
+> dog :: Form Raw UserForm
 > dog = Form $ "dave@dog.com"
 >           :&: ("woof" :&: "woof2")
 >           :&: "Bone"
@@ -295,22 +292,24 @@ ghci> rawEnterPasswordField
 "woof"
 ```
 
-What if we try to access a nonsense field, or just a field which doesn't
-actually exist in the form?
+If we try to access something which isn't a valid form, it won't have the right
+kind and we will get a compile error telling us the kinds don't match. But what
+if we try to access a valid subform which doesn't actually exist in the form?
 
 ```
-ghci> dog ^. subform @Int
+ghci> dog ^. subform @(Named "not here" TextField)
 
 <interactive>:45:8: error:
     • Attempted access of sub form
-        ‘Int’
+        ‘'Named "not here" TextField’
       But it does not exist in the given form
-        ‘(ValidatedForm EmailError Email
-          :<: NamedField "email" 'TextField)
-         :&: (PasswordField :&: (ColourField :&: FilmField))’
-    • In the second argument of ‘(^.)’, namely ‘subform @Int’
-      In the expression: dog ^. subform @Int
-      In an equation for ‘it’: it = dog ^. subform @Int
+        ‘'Validated EmailError Email (Named "email" TextField)
+         ':+: (PasswordField ':+: (ColourField :+: FilmField))’
+    • In the second argument of ‘(^.)’, namely
+        ‘subform @(Named "not here" TextField)’
+      In the expression: dog ^. subform @(Named "not here" TextField)
+      In an equation for ‘it’:
+          it = dog ^. subform @(Named "not here" TextField)
 ```
 
 We get a nice custom type error. `subform` also works on haskell and error
@@ -318,7 +317,7 @@ forms:
 
 ```haskell
 
-> cat :: Form 'Hs UserForm
+> cat :: Form Hs UserForm
 > cat = Form $ Email "top@cat.com"
 >          :&: Password "meow"
 >          :&: Purple
@@ -338,10 +337,10 @@ ghci> cat ^. subform @EnterPasswordField
 
 <interactive>:63:7: error:
     • Attempted access of erased sub form
-        ‘NamedField "password" 'TextField’
+        ‘'Named "password" TextField’
       It exists in the given form
-        ‘ValidatedForm PasswordError Password
-         :<: (EnterPasswordField :&: RepeatPasswordField)’
+        ‘'Validated PasswordError Password
+         (EnterPasswordField :+: RepeatPasswordField)’
       But not after the form is reduced to its haskell type
         ‘Password’
     • In the second argument of ‘(^.)’, namely
@@ -373,13 +372,13 @@ isn't such a win, but this is just an example!
 QuickForm provides a function, `validateAll`, which handles full form
 validation, that is, conversion to the haskell type or error type. The return
 type depends on if any field is `Validated`. If the form has no fields which can
-fail, it has the type `Form 'Raw f -> Form 'Hs f` and is just a direct
-conversion. In any other case the type is `Form 'Raw f -> Either (Form 'Err f)
-(Form 'Hs f)`. Provided you've written all of the required `Validation`
+fail, it has the type `Form Raw f -> Form Hs f` and is just a direct
+conversion. In any other case the type is `Form Raw f -> Either (Form Err f)
+(Form Hs f)`. Provided you've written all of the required `Validation`
 instances, which we have:
 
 ```
-ghci> validateAll raw
+ghci> validateAll dog
 Left (Form (Just (fromList [])
         :&: Just (fromList [TooShort,Unmatching])
         :&: Just (fromList [EnumReadFailed])))
@@ -390,7 +389,7 @@ passes the rules:
 
 ```haskell
 
-> monkey :: Form 'Raw UserForm
+> monkey :: Form Raw UserForm
 > monkey = Form $ "matt@monkey.com"
 >             :&: ("ilikebananas" :&: "ilikebananas")
 >             :&: "Yellow"
@@ -422,7 +421,7 @@ A common feature of HTML forms is validation as you type. We could call
 Additionally, typing anything into the first field would cause the later fields
 to also be validated, as if you'd pressed the submit button. Ideally we want to
 be able to validate a single branch of the form, identified by which field was
-updated. In comes `validateBranch :: Form 'Raw form -> Form 'Err form`. Because
+updated. In comes `validateBranch :: Form Raw f -> Form Err f`. Because
 this does not validate the entire form, we always return an error form. This
 function can't be called by forms with no fields that can fail.
 
@@ -453,8 +452,8 @@ ghci> vfilm
 Form (Nothing :&: Nothing :&: Nothing)
 ```
 
-You should hopefully be able to see that the `Just` fields are the ones we asked
-it to validate, and the unrelated `Nothing` fields are untouched.
+Notice that the `Just` fields are the ones we asked it to validate, and the
+unrelated `Nothing` fields are untouched.
 
  ### Other notes
 

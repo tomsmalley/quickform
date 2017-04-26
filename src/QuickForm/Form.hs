@@ -10,10 +10,10 @@ import GHC.Generics (Generic)
 import QuickForm.TypeLevel
 
 -- | Concrete form values
-type Form (r :: Reduced) form = Form' r form (Reduce r form)
+type Form (r :: Reduced) (form :: QuickForm) = Form' r form (Reduce r form)
 
 -- | Like 'Tagged' but with extra tag @r@ of kind 'Reduced'.
-newtype Form' (r :: Reduced) form a = Form { unForm :: a }
+newtype Form' (r :: Reduced) (form :: QuickForm) a = Form { unForm :: a }
   deriving (Eq, Functor, Generic)
 
 instance ToJSON a => ToJSON (Form' r form a)

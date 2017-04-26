@@ -1,10 +1,12 @@
 {-# LANGUAGE DeriveGeneric, ExistentialQuantification, KindSignatures
            , TypeFamilies, UndecidableInstances #-}
 
+{-# LANGUAGE GADTs, PolyKinds, TypeInType #-}
+
 module QuickForm.TypeLevel where
 
 import Data.Aeson
-import GHC.Generics
+import GHC.Generics (Generic)
 import Data.Text (Text)
 import Data.Set (Set)
 import GHC.TypeLits (Symbol)
@@ -18,20 +20,25 @@ import QuickForm.Many
 -- validated haskell type, and 'Err' stores any errors that occur during
 -- validation.
 data Reduced = Raw | Hs | Err
+type Raw = 'Raw
+type Err = 'Err
+type Hs = 'Hs
 
 -- | Denotes a side of a combinator such as (a :&: b)
 data WhichSide = First | Second | Both | Neither
 
 -- | Finds which side the target form is on
-type family FindSub form sub :: WhichSide where
-  FindSub (a :&: b) c = HasSub a c `ChooseSide` HasSub b c
-  FindSub (a :<: b) c = HasSub a c `ChooseSide` HasSub b c
+type family FindSub (form :: QuickForm) (sub :: QuickForm) :: WhichSide where
+  FindSub (a :+: b) c = HasSub a c `ChooseSide` HasSub b c
+  FindSub (Validated _ _ b) c = 'False `ChooseSide` HasSub b c
+  FindSub (Unvalidated _ b) c = 'False `ChooseSide` HasSub b c
 
 -- | Determine if a form 'sub' is in 'form'
-type family HasSub form sub :: Bool where
+type family HasSub (form :: QuickForm) (sub :: QuickForm) :: Bool where
   HasSub a a = 'True
-  HasSub (a :&: b) c = HasSub a c `Or` HasSub b c
-  HasSub (a :<: b) c = HasSub b c
+  HasSub (a :+: b) c = HasSub a c `Or` HasSub b c
+  HasSub (Validated _ _ b) c = HasSub b c
+  HasSub (Unvalidated _ b) c = HasSub b c
   HasSub a b = 'False
 
 -- | Converts pair of 'Bool' to 'WhichSide'
@@ -48,74 +55,105 @@ type family Or (a :: Bool) (b :: Bool) :: Bool where
   Or a b = 'False
 
 -- | Find which side of the type combinator we should explore
-type family FindError form :: WhichSide where
-  FindError (a :<: b) = HasError a `ChooseSide` HasError b
-  FindError (a :&: b) = HasError a `ChooseSide` HasError b
+type family FindError (form :: QuickForm) :: WhichSide where
+  FindError (Validated _ _ b) = 'True `ChooseSide` HasError b
+  FindError (Unvalidated _ b) = 'False `ChooseSide` HasError b
+  FindError (a :+: b) = HasError a `ChooseSide` HasError b
   FindError a = 'Neither
 
 -- | Find if a given form has validated forms somewhere inside it
-type family HasError (form :: Type) :: Bool where
-  HasError (NamedField n ('EnumField a)) = 'True
-  HasError (NamedField n f) = 'False
-  HasError (ValidatedForm e a) = 'True
-  HasError (UnvalidatedForm a) = 'False
-  HasError (ValidatedForm e a :<: _) = 'True
-  HasError (UnvalidatedForm a :<: b) = HasError b
-  HasError (a :&: b) = HasError a `Or` HasError b
+type family HasError (form :: QuickForm) :: Bool where
+  HasError (Named _ ('EnumField _)) = 'True
+  HasError (Named _ _) = 'False
+  HasError (Validated _ _ _) = 'True
+  HasError (Unvalidated _ b) = HasError b
+  HasError (a :+: b) = HasError a `Or` HasError b
 
 -- | Use this instead of directly using type function
 type ReduceErr a = ReduceErr' (FindError a) a
 
 -- | Build the error type for a given form, only using the validated forms
-type family ReduceErr' (which :: WhichSide) form :: Type where
+type family ReduceErr' (which :: WhichSide) (form :: QuickForm) :: Type where
 
-  ReduceErr' 'First (a :<: b) = ReduceErr a
-  ReduceErr' 'Second (a :<: b) = ReduceErr b
-  ReduceErr' 'Both (a :<: b) = ReduceErr a :<: ReduceErr b
+  ReduceErr' 'First (Validated e _ _) = Maybe (Set e)
+  ReduceErr' 'Both (Validated e _ b) = Maybe (Set e) :<: ReduceErr b
+  ReduceErr' 'Second (Unvalidated _ b) = ReduceErr b
 
-  ReduceErr' 'First (a :&: b) = ReduceErr a
-  ReduceErr' 'Second (a :&: b) = ReduceErr b
-  ReduceErr' 'Both (a :&: b) = ReduceErr a :&: ReduceErr b
+  ReduceErr' 'First (a :+: b) = ReduceErr a
+  ReduceErr' 'Second (a :+: b) = ReduceErr b
+  ReduceErr' 'Both (a :+: b) = ReduceErr a :&: ReduceErr b
 
-  ReduceErr' w (ValidatedForm e _) = Maybe (Set e)
-  ReduceErr' w (NamedField _ ('EnumField _)) = Maybe (Set EnumError)
+  ReduceErr' w (Named _ ('EnumField _)) = Maybe (Set EnumError)
 
 -- | Get the shallowest output type of an element
-type family OutputType form :: Type where
-  OutputType (ValidatedForm _ o) = o
-  OutputType (UnvalidatedForm o) = o
-  OutputType (NamedField _ 'TextField) = Text
-  OutputType (NamedField _ 'HiddenField) = Text
-  OutputType (NamedField _ ('EnumField o)) = o
+type family OutputType (form :: FieldType) :: Type where
+  OutputType 'TextField = Text
+  OutputType 'HiddenField = Text
+  OutputType ('EnumField o) = o
 
 -- | Get the raw type of an element
-type family RawType form :: Type where
-  RawType (NamedField _ 'TextField) = Text
-  RawType (NamedField _ 'HiddenField) = Text
-  RawType (NamedField _ ('EnumField o)) = Text
+type family RawType (form :: FieldType) :: Type where
+  RawType 'TextField = Text
+  RawType 'HiddenField = Text
+  RawType ('EnumField _) = Text
 
-type family Reduce (t :: Reduced) form :: Type where
+type family Reduce (r :: Reduced) (form :: QuickForm) :: Type where
   Reduce 'Err a = ReduceErr a
-  Reduce 'Raw (a :<: b) = Reduce 'Raw b
-  Reduce 'Hs (a :<: b) = Reduce 'Hs a
-  Reduce t (a :&: b) = Reduce t a :&: Reduce t b
+  Reduce 'Raw (Validated _ _ b) = Reduce 'Raw b
+  Reduce 'Raw (Unvalidated _ b) = Reduce 'Raw b
+  Reduce 'Hs (Validated _ a _) = a
+  Reduce 'Hs (Unvalidated a _) = a
+  Reduce r (a :+: b) = Reduce r a :&: Reduce r b
 
-  Reduce 'Raw a = RawType a
-  Reduce 'Hs a = OutputType a
+  Reduce 'Raw (Named _ f) = RawType f
+  Reduce 'Hs (Named _ f) = OutputType f
 
 -- | Chainable forms
-data ValidatedForm (err :: Type) (output :: Type)
-data UnvalidatedForm (output :: Type)
-
--- | Terminal form
-data NamedField (name :: Symbol) (form :: FieldType)
-data FieldType
-  = TextField
-  | HiddenField
-  | forall output. EnumField (output :: Type)
 
 data EnumError = EnumReadFailed
   deriving (Eq, Show, Ord, Generic)
 instance ToJSON EnumError
 instance FromJSON EnumError
+
+type TextField = 'TextField
+type HiddenField = 'HiddenField
+type EnumField a = 'EnumField a
+
+data FieldType where
+  TextField :: FieldType
+  HiddenField :: FieldType
+  EnumField :: Type -> FieldType
+
+type Unvalidated = 'Unvalidated
+type Validated = 'Validated
+type Named = 'Named
+type (:+:) a b = a ':+: b
+
+data QuickForm where
+  Unvalidated :: Type -> QuickForm -> QuickForm
+  Validated :: Type -> Type -> QuickForm -> QuickForm
+  Named :: Symbol -> FieldType -> QuickForm
+  (:+:) :: QuickForm -> QuickForm -> QuickForm
+
+infixr 9 :+:
+
+--data Named (name :: Symbol) (::
+
+
+--data GForm where
+--  VF :: err -> output -> GForm
+--  UF :: output -> GForm
+--  NF :: (name :: Symbol) -> (field :: FieldType) -> GForm
+--
+--data SForm (f :: GForm) where
+--  SVF :: SForm ('VF e o)
+
+
+
+
+
+
+
+
+
 
