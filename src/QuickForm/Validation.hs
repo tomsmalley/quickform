@@ -20,11 +20,6 @@ data Validate err hs
   = Invalid (Set err)
   | Valid hs
   deriving (Eq, Show, Generic)
-instance Ord err => Monoid (Validate err hs) where
-  mempty = Invalid mempty
-  Invalid s `mappend` Invalid s' = Invalid $ s `mappend` s'
-  Valid hs `mappend` _ = Valid hs
-  _ `mappend` Valid hs = Valid hs
 instance (NFData err, NFData hs) => NFData (Validate err hs)
 
 -- | Like monoid's mempty, but produces Just mempty instead of Nothing

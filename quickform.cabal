@@ -11,7 +11,7 @@ cabal-version:       >=1.10
 extra-source-files: README.md
                   , LICENSE
 
-flag dev
+flag NoErrors
   description: Turns off custom type errors
   default: False
 
@@ -19,7 +19,7 @@ library
   default-language:    Haskell2010
   hs-source-dirs:      src
   ghc-options:         -Wall
-  if flag(dev)
+  if flag(NoErrors)
     cpp-options:       -DNO_FANCY_ERRORS
 
   exposed-modules:     QuickForm
@@ -52,6 +52,9 @@ test-suite quickform-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  cpp-options:         -DNO_FANCY_ERRORS
+  -- Stack doesn't seem to use this, so use --flag quickform:NoErrors when
+  -- testing or you may get a lot of errors due to not catching compile time errors
 
   build-depends:       base
                      , quickform
