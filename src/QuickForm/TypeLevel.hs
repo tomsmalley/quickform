@@ -1,65 +1,63 @@
 {-# LANGUAGE DeriveGeneric, ExistentialQuantification, KindSignatures
            , TypeFamilies, UndecidableInstances #-}
 
-{-# LANGUAGE GADTs, PolyKinds, TypeInType #-}
-
-module QuickForm.TypeLevel where
+module QuickForm.TypeLevel
+  ( QuickForm
+  , Unvalidated
+  , Validated
+  , Field
+  , (:+:)
+  , FieldType
+  , TextField
+  , HiddenField
+  , EnumField
+  , EnumError (..)
+  , WhichSide (..)
+  , FindError
+  , HasError
+  , FindSub
+  , HasSub
+  ) where
 
 import Data.Aeson
 import GHC.Generics (Generic)
 import GHC.TypeLits (Symbol)
 import Data.Kind
 
--- | QuickForm combinators. These are all used as lifted types by DataKinds.
-data QuickForm where
-  -- | Convert the sub form to a type
-  Unvalidated :: Type -> QuickForm -> QuickForm
-  -- | Validate the sub form to a failure type or a success type
-  Validated :: Type -> Type -> QuickForm -> QuickForm
-  -- | 'Field' wraps a base 'FieldType' with a 'Symbol' representing the
-  -- HTML "name" property of a concrete field element
-  Field :: Symbol -> FieldType -> QuickForm
-  -- | Combine two 'QuickForm's to make a larger form
-  (:+:) :: QuickForm -> QuickForm -> QuickForm
+-- | This is promoted to a kind, and forms the basis of the library. See
+-- below for explanations of the constructors.
+data QuickForm
+  = Unvalidated Type QuickForm
+  | Validated Type Type QuickForm
+  | Field Symbol FieldType
+  | (:+:) QuickForm QuickForm
 
 -- | Convert the sub form @b@ :: 'QuickForm' to type @a@.
--- This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'QuickForm'.
-type Unvalidated a b = 'Unvalidated a b
--- | Validate the sub form @b@ :: 'QuickForm' to type @a@ if successful, otherwise
--- to type @e@.
--- This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'QuickForm'.
+type Unvalidated a (b :: QuickForm) = 'Unvalidated a b
+-- | Validate the sub form @b@ :: 'QuickForm' to type @a@ if successful,
+-- otherwise to type @e@.
 type Validated e a b = 'Validated e a b
 -- | Represents a concrete HTML field element with name @n@ and type @t@ ::
 -- 'FieldType'.
--- This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'QuickForm'.
 type Field n t = 'Field n t
 -- | Combine @a@ :: 'QuickForm' with @b@ :: 'QuickForm'. This can be chained to
 -- as many fields / sub forms as you require.
--- This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'QuickForm'.
 type (:+:) a b = a ':+: b
 infixr 9 :+:
 
--- | Field types available
-data FieldType where
-  -- | Simple input field
-  TextField :: FieldType
-  -- | Hidden input field
-  HiddenField :: FieldType
-  -- | Enum field (dropdown or radio). Takes a type giving the data source.
-  EnumField :: Type -> FieldType
+-- Base field types ------------------------------------------------------------
 
--- | This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'FieldType'.
+-- | Field types, promoted to a kind. See below for the constructors.
+data FieldType
+  = TextField
+  | HiddenField
+  | EnumField Type
+
+-- | Text fields
 type TextField = 'TextField
--- | This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'FieldType'.
+-- | Hidden fields
 type HiddenField = 'HiddenField
--- | This convenience type means you don't have to put ticks before using the
--- lifted constructor. It has kind 'FieldType'.
+-- | Enum fields (e.g. dropdown or radio)
 type EnumField a = 'EnumField a
 
 -- | Reading enum fields into their given type can fail (realistically only if a
@@ -68,6 +66,8 @@ data EnumError = EnumReadFailed
   deriving (Eq, Show, Ord, Generic)
 instance ToJSON EnumError
 instance FromJSON EnumError
+
+-- | Type functions
 
 -- | Denotes a side of a combinator such as (a :+: b)
 data WhichSide = First | Second | Both | Neither

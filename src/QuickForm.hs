@@ -3,7 +3,7 @@ module QuickForm
 
   -- * Type level
 
-  -- ** QuickForm types
+  -- ** QuickForm kind and type constructors
     QuickForm
   , Validated
   , Unvalidated
@@ -30,12 +30,11 @@ module QuickForm
   , Err
 
   -- ** Constructors
-  , (:*:) (..)
+  , (:*:) ((:+:))
 
   -- * Validation
 
   -- ** Validation class
-  , Validate (..)
   , Validation (..)
   , ValidationType
 
@@ -54,6 +53,5 @@ module QuickForm
 import QuickForm.BranchValidation
 import QuickForm.Form
 import QuickForm.Lens
-import QuickForm.Pair
 import QuickForm.TypeLevel
 import QuickForm.Validation

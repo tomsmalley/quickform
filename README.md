@@ -147,8 +147,8 @@ So far this is quite simple, we just defined the shape of our form at the type
 level. But we need a way of operating at the term level in order to actually do
 anything. Enter `Form`. `Form` is a newtype, wrapping a type function which
 strips superfluous information out of our form definition, and "unlifting" it
-from kind `QuickForm` to kind `Type`, so we can actually use if. It also carries
-some metadata (the reduction kind, and the original form kind).
+from kind `QuickForm` to kind `Type`, so we can actually use it. It also carries
+some metadata as phantom types (the reduction type, and the original form type).
 
 `Form` takes two type parameters, the first parameter of kind `Reduced` (tells
 us how the form has been reduced), and the second of kind `QuickForm`.
@@ -158,32 +158,33 @@ The `Reduced` kind comprises of types:
 * `Hs` encodes the final "haskell" values which we would like.
 
 Loading this file into GHCi within the context of this repository, you can take
-a look at what these mean (these examples are slightly reformatted):
+a look at what these mean:
 
 ```
-ghci> :kind! Form Raw UserForm
-Form Raw UserForm :: *
-= Form' Raw UserForm (Text :*: (Text :*: Text) :*: Text :*: Text)
+ghci> :t unForm (Form undefined :: Form Raw UserForm)
+unForm (Form undefined :: Form Raw UserForm)
+  :: Text :*: ((Text :*: Text) :*: (Text :*: Text))
 
-ghci> :kind! Form Err UserForm
-Form Err UserForm :: *
-= Form' Err UserForm
-   ( Maybe (Set EmailError)
- :*: Maybe (Set PasswordError)
- :*: Maybe (Set EnumError))
+ghci> :t unForm (Form undefined :: Form Err UserForm)
+unForm (Form undefined :: Form Err UserForm)
+  :: Maybe (S.Set EmailError)
+     :*: (Maybe (S.Set PasswordError) :*: Maybe (S.Set EnumError))
 
-ghci> :kind! Form Hs UserForm
-Form Hs UserForm :: *
-= Form' Hs UserForm (Email :*: Password :*: Colour :*: Film)
+ghci> :t unForm (Form undefined :: Form Hs UserForm)
+unForm (Form undefined :: Form Hs UserForm)
+  :: Email :*: (Password :*: (Colour :*: Film))
 ```
 
-`:kind!` allows you to evaluate type functions in ghci. You may notice that the
-structure of these is roughly like the type we laid out earlier, but with parts
-missing when they are not used in that particular representation. For example,
-the error type omits the unvalidated film field completely, and the haskell type
-drops the inner `Field` information. The `:+:` pair combinator has been changed
-to `:*:`, which also has a data constructor of the same name. The difference is
-that `:+:` has kind `QuickForm` and `:*:` has kind `*` or `Type`.
+You may notice that the structure of these is roughly like the type we laid out
+earlier, but with parts missing when they are not used in that particular
+representation. For example, the error type omits the unvalidated film field
+completely, and the haskell type drops the inner `Field` information. The `:+:`
+pair combinator has been changed to `:*:`, which also has a single data
+constructor `:+:`. This is to match the syntax of when we created the form type,
+since annotating or seeing `:*:` types isn't common. The difference between the
+two types is that `:+:` has kind `QuickForm` (and so do the two arguments), but
+`:*:` has kind `*` or `Type` (again, so do the arguments, so we can put values
+into it).
 
  ### Validation class
 
@@ -193,15 +194,13 @@ type class, `Validation f`. It has one function, `validate`, the type of
 which changes depending on what `form` is in the instance head. There are only
 two valid uses: on parent forms like `Unvalidated a b` or `Validated
 e a b`. In the first case, `validate :: Form Hs b -> a`, and the second,
-`validate :: Form Hs b -> Validate e a`. `Validate e a` is isomorphic to
-`Either (Set e) a`, with `Invalid` instead of `Left` and `Valid` instead of
-`Right`. We always return a `Set` of errors, because many errors might be
-applicable at once.
+`validate :: Form Hs b -> Either (Set e) a`. We always return a `Set` of errors,
+because many errors might be applicable at once.
 
-It is important to note that this type class encapsulates validation as a pure
-function, which can be called on *both* the server and the client. Additional
-serverside validation is done in the handler, after performing full form
-validation.
+It is important to emphasise that this type class encapsulates validation as a
+pure function, which can be called on *both* the server and the client.
+Additional serverside validation is done in the handler, after performing full
+form validation.
 
 Let's have a look at our example; first off, the unvalidated film field. The sub
 field in this case is `Field "film" TextField`, so the haskell type will
@@ -219,28 +218,28 @@ We just unwrap the text that is in the form, and wrap it in `Film`.
 
 Now for a more interesting example, the email field. This is again just wrapping
 a single text field, but it is validated! So the return type changes to
-`Validate EmailError Email`. For this example we will just check if there is an
-`@` character in the field.
+`Either (Set EmailError) Email`. For this example we will just check if there is
+an `@` character in the field.
 
 ```haskell
 
 > instance Validation EmailField where
 >   validate (Form t)
->     | hasAtSymbol = Valid $ Email t
->     | otherwise = Invalid $ S.singleton InvalidEmail
+>     | hasAtSymbol = Right $ Email t
+>     | otherwise = Left $ S.singleton InvalidEmail
 >     where hasAtSymbol = isJust $ T.find (== '@') t
 
 ```
 
 Finally we come to the double password field. We want the password to be at
 least 8 characters long, and both fields to match. We just pattern match on
-`:*:` to extract the `Text`s.
+`:+:` to extract the `Text`s.
 
 ```haskell
 instance Validation PasswordField where
-  validate (Form (t :*: t'))
-    | S.null set = Valid $ Password t
-    | otherwise  = Invalid set
+  validate (Form (t :+: t'))
+    | S.null set = Right $ Password t
+    | otherwise  = Left set
     where set = S.fromList $ catMaybes [tooShort, matches]
           tooShort = if T.length t >= 8 then Nothing else Just TooShort
           matches = if t == t' then Nothing else Just Unmatching
@@ -263,9 +262,9 @@ entry for `UserForm`.
 
 > dog :: Form Raw UserForm
 > dog = Form $ "dave@dog.com"
->           :*: ("woof" :*: "woof2")
->           :*: "Bone"
->           :*: "Beethoven"
+>          :+: ("woof" :+: "woof2")
+>          :+: "Bone"
+>          :+: "Beethoven"
 
 ```
 
@@ -289,7 +288,7 @@ rawEmailField :: Text
 ghci> rawEmailField
 "dave@dog.com"
 ghci> rawPasswordField
-"woof" :*: "woof2"
+"woof" :+: "woof2"
 ghci> rawEnterPasswordField
 "woof"
 ```
@@ -321,9 +320,9 @@ forms:
 
 > cat :: Form Hs UserForm
 > cat = Form $ Email "top@cat.com"
->          :*: Password "meow"
->          :*: Purple
->          :*: Film "The Pink Panther"
+>          :+: Password "meow"
+>          :+: Purple
+>          :+: Film "The Pink Panther"
 
 ```
 ```
@@ -359,8 +358,8 @@ isn't such a win, but this is just an example!
 
 > instance Validation PasswordField where
 >   validate passwords
->     | S.null s = Valid $ Password enterP
->     | otherwise  = Invalid s
+>     | S.null s = Right $ Password enterP
+>     | otherwise  = Left s
 >     where s = S.fromList $ catMaybes [tooShort, matches]
 >           tooShort = if T.length enterP >= 8 then Nothing else Just TooShort
 >           matches = if enterP == repeatP then Nothing else Just Unmatching
@@ -382,8 +381,8 @@ instances, which we have:
 ```
 ghci> validateAll dog
 Left (Form (Just (fromList [])
-        :*: Just (fromList [TooShort,Unmatching])
-        :*: Just (fromList [EnumReadFailed])))
+        :+: Just (fromList [TooShort,Unmatching])
+        :+: Just (fromList [EnumReadFailed])))
 ```
 
 Validation failed, as we would expect for the example given. Let's make one that
@@ -393,17 +392,17 @@ passes the rules:
 
 > monkey :: Form Raw UserForm
 > monkey = Form $ "matt@monkey.com"
->             :*: ("ilikebananas" :*: "ilikebananas")
->             :*: "Yellow"
->             :*: "Planet of the Apes"
+>             :+: ("ilikebananas" :+: "ilikebananas")
+>             :+: "Yellow"
+>             :+: "Planet of the Apes"
 
 ```
 ```
 ghci> validateAll monkey
 Right (Form (Email "matt@monkey.com"
-         :*: Password "ilikebananas"
-         :*: Yellow
-         :*: Film "Planet of the Apes"))
+         :+: Password "ilikebananas"
+         :+: Yellow
+         :+: Film "Planet of the Apes"))
 ```
 
 This function must always be called on the server after receiving the raw values
@@ -445,13 +444,13 @@ around when they should be deleted.
 ```
 ```
 ghci> vemail
-Form (Just (fromList []) :*: Nothing :*: Nothing)
+Form (Just (fromList []) :+: Nothing :+: Nothing)
 ghci> venterp
-Form (Nothing :*: Just (fromList [TooShort,Unmatching]) :*: Nothing)
+Form (Nothing :+: Just (fromList [TooShort,Unmatching]) :+: Nothing)
 ghci> vcolour
-Form (Nothing :*: Nothing :*: Just (fromList [EnumReadFailed]))
+Form (Nothing :+: Nothing :+: Just (fromList [EnumReadFailed]))
 ghci> vfilm
-Form (Nothing :*: Nothing :*: Nothing)
+Form (Nothing :+: Nothing :+: Nothing)
 ```
 
 Notice that the `Just` fields are the ones we asked it to validate, and the
@@ -465,10 +464,6 @@ The library assumes that each of your types for your fields are unique. This
 *should always* be the case naturally thanks to the `Symbol` in the terminal
 fields - each control on a HTML form should have a different name!
 
-
-
-
-
 ---
 
 For the test suite:
@@ -479,4 +474,3 @@ For the test suite:
 > main = putStrLn $ "\nREADME.md"
 
 ```
-

@@ -36,18 +36,18 @@ type N3 = Field "E" (EnumField Int)
 type V1 = Validated Bool Text (Field "e" (EnumField Int))
 type V2 = Validated String Int V1
 instance Validation V1 where
-  validate (Form 1) = Valid "1"
-  validate (Form 2) = Valid "2"
-  validate _ = Invalid $ S.singleton False
+  validate (Form 1) = Right "1"
+  validate (Form 2) = Right "2"
+  validate _ = Left $ S.singleton False
 instance Validation V2 where
-  validate (Form "1") = Valid 1
-  validate (Form "2") = Invalid $ S.singleton "2"
-  validate _ = Invalid $ S.singleton "3"
+  validate (Form "1") = Right 1
+  validate (Form "2") = Left $ S.singleton "2"
+  validate _ = Left $ S.singleton "3"
 
 type V3 = Validated Bool Int (Field "t" TextField)
 instance Validation V3 where
-  validate (Form "1") = Valid 1
-  validate _ = Invalid $ S.singleton True
+  validate (Form "1") = Right 1
+  validate _ = Left $ S.singleton True
 
 type U1 = Unvalidated Bool (Field "t" TextField)
 instance Validation U1 where
@@ -80,7 +80,7 @@ construction = describe "Construction" $ do
     it "unvalidated form error field fails" $ do
       shouldNotTypecheck (Form "test" :: Form Err U1)
     it "unvalidated pair error form fails" $ do
-      shouldNotTypecheck (Form ("test" :*: "test") :: Form Err (N1 :+: N2))
+      shouldNotTypecheck (Form ("test" :+: "test") :: Form Err (N1 :+: N2))
 
 -- Tests for Form newtype ------------------------------------------------------
 
@@ -108,41 +108,42 @@ formNewtype = describe "Form newtype" $ do
   describe "Show instance" $ do
     it "works as expected" $ do
       show (Form "1" :: Form Raw N1) `shouldBe` "Form \"1\""
-      show (Form ("1" :*: "2" :*: "3") :: Form Raw P1) `shouldBe`
-        "Form (\"1\" :*: \"2\" :*: \"3\")"
+      show (Form ("1" :+: "2" :+: "3") :: Form Raw P1) `shouldBe`
+        "Form (\"1\" :+: \"2\" :+: \"3\")"
 
 pair :: Spec
 pair = describe "Pair combinator" $ do
 
   describe "Derived instances" $ do
     it "Eq instance" $ do
-      1 :*: 2 `shouldBe` 1 :*: 2
-      1 :*: 2 `shouldNotBe` 1 :*: 3
+      1 :+: 2 `shouldBe` 1 :+: 2
+      1 :+: 2 `shouldNotBe` 1 :+: 3
 
   describe "Show instance" $ do
     it "shows correctly" $ do
-      show (1 :*: 2 :*: 3) `shouldBe` "1 :*: 2 :*: 3"
+      show (1 :+: 2 :+: 3) `shouldBe` "1 :+: 2 :+: 3"
     it "shows correctly" $ do
-      show (1 :*: Just 2 :*: 3) `shouldBe` "1 :*: Just 2 :*: 3"
+      show (1 :+: Just 2 :+: 3) `shouldBe` "1 :+: Just 2 :+: 3"
     it "shows correctly" $ do
-      show (Just $ 1 :*: Just 2 :*: 3) `shouldBe` "Just (1 :*: Just 2 :*: 3)"
+      show (Just $ 1 :+: Just 2 :+: 3) `shouldBe` "Just (1 :+: Just 2 :+: 3)"
 
   describe "Monoid instance" $ do
     it "mempty" $ do
-      mempty `shouldBe` (mempty :: [Int]) :*: (mempty :: Maybe Char)
+      mempty `shouldBe` (mempty :: [Int]) :+: (mempty :: Maybe Char)
     it "left identity" $ do
-      property $ \a b -> mempty <> (a :*: b) == (a :: [Int]) :*: (b :: Maybe Char)
+      property $ \a b -> mempty <> (a :+: b) == (a :: [Int]) :+: (b :: Maybe Char)
     it "right identity" $ do
-      property $ \a b -> (a :*: b) <> mempty == (a :: [Int]) :*: (b :: Maybe Char)
+      property $ \a b -> (a :+: b) <> mempty == (a :: [Int]) :+: (b :: Maybe Char)
     it "associativity" $ do
       property $ \a a' b b' c c'
-        -> a :*: a' <> (b :*: b' <> c :*: c')
-        == (a :*: a' <> b :*: b') <> (c :: [Int]) :*: (c' :: Maybe String)
+        -> a :+: a' <> (b :+: b' <> c :+: c')
+        == (a :+: a' <> b :+: b') <> (c :: [Int]) :+: (c' :: Maybe String)
 
 -- Tests for EnumError ---------------------------------------------------------
 
 enumError :: Spec
 enumError = describe "EnumError" $ do
+
   describe "Derived instances" $ do
     it "Eq instance" $ do
       EnumReadFailed `shouldBe` EnumReadFailed
@@ -160,35 +161,27 @@ enumError = describe "EnumError" $ do
 validation :: Spec
 validation = describe "Validation" $ do
 
-  -- These are just to get 100% coverage
-  describe "Derived instances of Validate" $ do
-    it "Eq instance" $ do
-      Valid 1 `shouldBe` Valid 1
-      Valid 1 `shouldNotBe` Valid 2
-    it "Show instance" $ do
-      showList [Valid 1] "" `shouldBe` show [Valid 1]
-
   describe "Pair validation, left validated, pair of unvalidated" $ do
     it "validates and passes" $ do
-      validateAll (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
-        Right (Form $ 1 :*: "2" :*: "3")
+      validateAll (Form $ "1" :+: "2" :+: "3" :: Form Raw P1) `shouldBe`
+        Right (Form $ 1 :+: "2" :+: "3")
     it "validates and fails" $ do
-      validateAll (Form $ "a" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
+      validateAll (Form $ "a" :+: "2" :+: "3" :: Form Raw P1) `shouldBe`
         Left (Form justEnumErr)
 
   describe "Pair validation, left validated, pair of unvalidated" $ do
     it "validates and passes" $ do
-      validateAll (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-        Right (Form $ 1 :*: "2" :*: 'c')
+      validateAll (Form $ "1" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+        Right (Form $ 1 :+: "2" :+: 'c')
     it "validates and fails last" $ do
-      validateAll (Form $ "1" :*: "2" :*: "3" :: Form Raw P2) `shouldBe`
-        Left (Form $ Just S.empty :*: justEnumErr)
+      validateAll (Form $ "1" :+: "2" :+: "3" :: Form Raw P2) `shouldBe`
+        Left (Form $ Just S.empty :+: justEnumErr)
     it "validates and fails first" $ do
-      validateAll (Form $ "a" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-        Left (Form $ justEnumErr :*: Just S.empty)
+      validateAll (Form $ "a" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+        Left (Form $ justEnumErr :+: Just S.empty)
     it "validates and fails both" $ do
-      validateAll (Form $ "a" :*: "2" :*: "3" :: Form Raw P2) `shouldBe`
-        Left (Form $ justEnumErr :*: justEnumErr)
+      validateAll (Form $ "a" :+: "2" :+: "3" :: Form Raw P2) `shouldBe`
+        Left (Form $ justEnumErr :+: justEnumErr)
 
   describe "Fields" $ do
     it "validates correctly for TextField" $ do
@@ -283,36 +276,36 @@ branchValidation = describe "Branch validation" $ do
   describe "Pairs" $ do
     it "validates first field, not touching others" $ do
       validateBranch @(Field "1" (EnumField Int))
-        (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-          Form (Just S.empty :*: Nothing)
+        (Form $ "1" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+          Form (Just S.empty :+: Nothing)
     it "validates second field, not touching others" $ do
       validateBranch @(Field "2" TextField)
-        (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-          Form (Nothing :*: Nothing)
+        (Form $ "1" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+          Form (Nothing :+: Nothing)
     it "validates third field, not touching others" $ do
       validateBranch @(Field "3" (EnumField Char))
-        (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-          Form (Nothing :*: Just S.empty)
+        (Form $ "1" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+          Form (Nothing :+: Just S.empty)
 
   describe "Pairs, no errors on right branch" $ do
     it "validates first field, not touching others" $ do
       validateBranch @(Field "1" (EnumField Int))
-        (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
+        (Form $ "1" :+: "2" :+: "3" :: Form Raw P1) `shouldBe`
           Form (Just S.empty)
     it "validates second field, not touching others" $ do
       validateBranch @(Field "2" TextField)
-        (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
+        (Form $ "1" :+: "2" :+: "3" :: Form Raw P1) `shouldBe`
           Form Nothing
     it "validates third field, not touching others" $ do
       validateBranch @(Field "3" TextField)
-        (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
+        (Form $ "1" :+: "2" :+: "3" :: Form Raw P1) `shouldBe`
           Form Nothing
 
   describe "Pairs, many errors (for testing emptySetErrors)" $ do
     it "validates whole field and passes" $ do
       validateBranch @P2
-        (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
-          Form (Just S.empty :*: Just S.empty)
+        (Form $ "1" :+: "2" :+: "'c'" :: Form Raw P2) `shouldBe`
+          Form (Just S.empty :+: Just S.empty)
 
 -- Tests for form lenses -------------------------------------------------------
 
@@ -405,70 +398,70 @@ lenses = describe "Lenses" $ do
 
   describe "Raw pairs" $ do
     let form :: Form Raw (Field "1" TextField :+: Field "2" TextField)
-        form = Form $ "1" :*: "2"
+        form = Form $ "1" :+: "2"
     it "view should work on the total field" $ do
       form ^. subform @(Field "1" TextField :+: Field "2" TextField)
-        `shouldBe` "1" :*: "2"
+        `shouldBe` "1" :+: "2"
     it "set should work on the total field" $ do
       (form & subform @(Field "1" TextField :+: Field "2" TextField)
-        .~ "3" :*: "4")
-        `shouldBe` Form ("3" :*: "4")
+        .~ "3" :+: "4")
+        `shouldBe` Form ("3" :+: "4")
     it "view should work on the first field" $ do
       form ^. subform @(Field "1" TextField) `shouldBe` "1"
     it "set should work on the first field" $ do
       (form & subform @(Field "1" TextField) .~ "A")
-        `shouldBe` Form ("A" :*: "2")
+        `shouldBe` Form ("A" :+: "2")
     it "view should work on the second field" $ do
       form ^. subform @(Field "2" TextField) `shouldBe` "2"
     it "set should work on the second field" $ do
       (form & subform @(Field "2" TextField) .~ "A")
-        `shouldBe` Form ("1" :*: "A")
+        `shouldBe` Form ("1" :+: "A")
 
   describe "Hs pairs" $ do
     let form :: Form Hs (Field "1" (EnumField Bool) :+: Field "2" TextField)
-        form = Form $ True :*: "2"
+        form = Form $ True :+: "2"
     it "view should work on the total field" $ do
       form ^. subform @(Field "1" (EnumField Bool) :+: Field "2" TextField)
-        `shouldBe` True :*: "2"
+        `shouldBe` True :+: "2"
     it "set should work on the total field" $ do
       (form & subform @(Field "1" (EnumField Bool) :+: Field "2" TextField)
-            .~ False :*: "4") `shouldBe` Form (False :*: "4")
+            .~ False :+: "4") `shouldBe` Form (False :+: "4")
     it "view should work on the first field" $ do
       form ^. subform @(Field "1" (EnumField Bool)) `shouldBe` True
     it "set should work on the first field" $ do
       (form & subform @(Field "1" (EnumField Bool)) .~ False)
-        `shouldBe` Form (False :*: "2")
+        `shouldBe` Form (False :+: "2")
     it "view should work on the second field " $ do
       form ^. subform @(Field "2" TextField) `shouldBe` "2"
     it "set should work on the second field" $ do
       (form & subform @(Field "2" TextField) .~ "A")
-        `shouldBe` Form (True :*: "A")
+        `shouldBe` Form (True :+: "A")
 
   describe "Err pairs, both errors" $ do
     let form :: Form Err (Field "1" (EnumField Bool)
                           :+: Validated Int Text (Field "2" TextField))
-        form = Form $ justEnumErr :*: intErr
+        form = Form $ justEnumErr :+: intErr
         intErr = Just (S.singleton 1)
     it "view should work on the total field" $ do
       form ^. subform @(Field "1" (EnumField Bool)
                     :+: Validated Int Text (Field "2" TextField)) `shouldBe`
-        justEnumErr :*: intErr
+        justEnumErr :+: intErr
     it "set should work on the total field" $ do
       (form & subform @(Field "1" (EnumField Bool)
                     :+: Validated Int Text (Field "2" TextField))
-            .~ Nothing :*: Just S.empty) `shouldBe`
-        Form (Nothing :*: Just S.empty)
+            .~ Nothing :+: Just S.empty) `shouldBe`
+        Form (Nothing :+: Just S.empty)
     it "view should work on the first field" $ do
       form ^. subform @(Field "1" (EnumField Bool)) `shouldBe` justEnumErr
     it "set should work on the first field" $ do
       (form & subform @(Field "1" (EnumField Bool)) .~ Nothing) `shouldBe`
-        Form (Nothing :*: intErr)
+        Form (Nothing :+: intErr)
     it "view should work on the second field" $ do
       form ^. subform @(Validated Int Text (Field "2" TextField)) `shouldBe`
         intErr
     it "set should work on the second field" $ do
       (form & subform @(Validated Int Text (Field "2" TextField)) .~ Nothing)
-        `shouldBe` Form (justEnumErr :*: Nothing)
+        `shouldBe` Form (justEnumErr :+: Nothing)
 
   describe "Err pairs, first errors" $ do
     let form :: Form Err (Field "1" (EnumField Bool) :+: Field "2" TextField)

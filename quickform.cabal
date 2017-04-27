@@ -26,7 +26,6 @@ library
                      , QuickForm.BranchValidation
                      , QuickForm.Form
                      , QuickForm.Lens
-                     , QuickForm.Pair
                      , QuickForm.TypeLevel
                      , QuickForm.Validation
 

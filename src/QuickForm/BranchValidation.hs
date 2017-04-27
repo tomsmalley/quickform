@@ -10,7 +10,6 @@ import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Kind
 
 import QuickForm.Form
-import QuickForm.Pair
 import QuickForm.TypeLevel
 import QuickForm.Validation
 
@@ -72,7 +71,7 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'False
   ) => ValidateBranch' 'First 'First sub (a :+: b) where
-  validateBranch' (Form (a :*: _))
+  validateBranch' (Form (a :+: _))
     = reform $ validateBranch @sub @a (Form a)
 
 -- | Validate right branch when left branch doesn't have errors
@@ -81,7 +80,7 @@ instance
   , HasError a ~ 'False
   , HasError b ~ 'True
   ) => ValidateBranch' 'Second 'Second sub (a :+: b) where
-  validateBranch' (Form (_ :*: b))
+  validateBranch' (Form (_ :+: b))
     = reform $ validateBranch @sub @b (Form b)
 
 -- | Validate left branch when right branch only has errors
@@ -109,8 +108,8 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidateBranch' 'First 'Both sub (a :+: b) where
-  validateBranch' (Form (a :*: _))
-    = Form $ unForm (validateBranch @sub @a (Form a)) :*: mempty
+  validateBranch' (Form (a :+: _))
+    = Form $ unForm (validateBranch @sub @a (Form a)) :+: mempty
 
 -- | Validate right branch when both branches have errors
 instance
@@ -119,8 +118,8 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidateBranch' 'Second 'Both sub (a :+: b) where
-  validateBranch' (Form (_ :*: b))
-    = Form $ mempty :*: unForm (validateBranch @sub @b (Form b))
+  validateBranch' (Form (_ :+: b))
+    = Form $ mempty :+: unForm (validateBranch @sub @b (Form b))
 
 -- Custom type errors ----------------------------------------------------------
 
