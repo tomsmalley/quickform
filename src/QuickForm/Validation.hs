@@ -11,9 +11,8 @@ import GHC.Generics (Generic)
 import Data.Set (Set)
 import qualified Data.Set as S
 
-import QuickForm.Sub
-import QuickForm.Many
 import QuickForm.Form
+import QuickForm.Pair
 import QuickForm.TypeLevel
 
 data Validate err hs
@@ -27,10 +26,10 @@ class EmptySetErrors a where
   emptySetErrors :: a
 instance Monoid a => EmptySetErrors (Maybe a) where
   emptySetErrors = Just mempty
-instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :<: b) where
-  emptySetErrors = emptySetErrors :<: emptySetErrors
-instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :&: b) where
-  emptySetErrors = emptySetErrors :&: emptySetErrors
+instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a, b) where
+  emptySetErrors = (emptySetErrors, emptySetErrors)
+instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
+  emptySetErrors = emptySetErrors :*: emptySetErrors
 
 type family ValidationType (form :: QuickForm) where
   ValidationType (Unvalidated a b) = Form 'Hs b -> a
@@ -104,9 +103,9 @@ instance
   ) => ValidateAll' 'Both (Validated e a b) where
     validateAll' (Form b)
       = case validateAll @b (Form b) of
-        Left (Form err) -> Left $ Form $ mempty :<: err
+        Left (Form err) -> Left $ Form $ (mempty, err)
         Right form -> case validate @form form of
-          Invalid err -> Left $ Form $ Just err :<: emptySetErrors
+          Invalid err -> Left $ Form $ (Just err, emptySetErrors)
           Valid v' -> Right $ Form v'
 
 -- Validated parent without sub validation
@@ -127,22 +126,22 @@ instance
   , EmptySetErrors (ReduceErr a)
   , EmptySetErrors (ReduceErr b)
   ) => ValidateAll' 'Both (a :+: b) where
-    validateAll' (Form (a :&: b))
+    validateAll' (Form (a :*: b))
       = case (validateAll @a (Form a), validateAll @b (Form b)) of
-             (Left a', Left b') -> Left . Form $ unForm a' :&: unForm b'
-             (Left a', _) -> Left . Form $ unForm a' :&: emptySetErrors
-             (_, Left b') -> Left . Form $ emptySetErrors :&: unForm b'
-             (Right a', Right b') -> Right . Form $ unForm a' :&: unForm b'
+             (Left a', Left b') -> Left . Form $ unForm a' :*: unForm b'
+             (Left a', _) -> Left . Form $ unForm a' :*: emptySetErrors
+             (_, Left b') -> Left . Form $ emptySetErrors :*: unForm b'
+             (Right a', Right b') -> Right . Form $ unForm a' :*: unForm b'
 
 -- Pair type where the first/left side has validation
 instance
   ( ValidateAll a, HasError a ~ 'True
   , ValidateAll b, HasError b ~ 'False
   ) => ValidateAll' 'First (a :+: b) where
-    validateAll' (Form (a :&: b))
+    validateAll' (Form (a :*: b))
       = case validateAll @a (Form a) of
           Left a' -> Left $ reform a'
-          Right a' -> Right . Form $ unForm a' :&: unForm b'
+          Right a' -> Right . Form $ unForm a' :*: unForm b'
         where b' = validateAll @b (Form b)
 
 -- Pair type where the second/right side has validation
@@ -150,10 +149,10 @@ instance
   ( ValidateAll a, ValidateAll b
   , HasError a ~ 'False, HasError b ~ 'True
   ) => ValidateAll' 'Second (a :+: b) where
-    validateAll' (Form (a :&: b))
+    validateAll' (Form (a :*: b))
       = case validateAll @b (Form b) of
           Left b' -> Left $ reform b'
-          Right b' -> Right . Form $ unForm a' :&: unForm b'
+          Right b' -> Right . Form $ unForm a' :*: unForm b'
         where a' = validateAll @a (Form a)
 
 -- Pair type where neither side have validation
@@ -161,8 +160,8 @@ instance
   ( ValidateAll a, HasError a ~ 'False
   , ValidateAll b, HasError b ~ 'False
   ) => ValidateAll' 'Neither (a :+: b) where
-    validateAll' (Form (a :&: b))
-      = Form $ unForm a' :&: unForm b'
+    validateAll' (Form (a :*: b))
+      = Form $ unForm a' :*: unForm b'
         where a' = validateAll @a (Form a)
               b' = validateAll @b (Form b)
 

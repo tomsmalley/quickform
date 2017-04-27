@@ -7,8 +7,8 @@ module QuickForm.BranchValidation where
 import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Kind
 
-import QuickForm.Many
 import QuickForm.Form
+import QuickForm.Pair
 import QuickForm.TypeLevel
 import QuickForm.Validation
 
@@ -75,7 +75,7 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'False
   ) => ValidatePartialEither' 'First 'First (a :+: b) sub where
-  validatePartialEither' (Form (a :&: _))
+  validatePartialEither' (Form (a :*: _))
     = reform $ validatePartial @a @sub (Form a)
 
 -- Validate left branch when right branch only has errors
@@ -102,7 +102,7 @@ instance
   , HasError a ~ 'False
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'Second 'Second (a :+: b) sub where
-  validatePartialEither' (Form (_ :&: b))
+  validatePartialEither' (Form (_ :*: b))
     = reform $ validatePartial @b @sub (Form b)
 
 -- Validate left branch when both branches have errors
@@ -112,8 +112,8 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'First 'Both (a :+: b) sub where
-  validatePartialEither' (Form (a :&: _))
-    = Form $ unForm (validatePartial @a @sub (Form a)) :&: mempty
+  validatePartialEither' (Form (a :*: _))
+    = Form $ unForm (validatePartial @a @sub (Form a)) :*: mempty
 
 -- Validate right branch when both branches have errors
 instance
@@ -122,8 +122,8 @@ instance
   , HasError a ~ 'True
   , HasError b ~ 'True
   ) => ValidatePartialEither' 'Second 'Both (a :+: b) sub where
-  validatePartialEither' (Form (_ :&: b))
-    = Form $ mempty :&: unForm (validatePartial @b @sub (Form b))
+  validatePartialEither' (Form (_ :*: b))
+    = Form $ mempty :*: unForm (validatePartial @b @sub (Form b))
 
 -- Custom type errors ----------------------------------------------------------
 

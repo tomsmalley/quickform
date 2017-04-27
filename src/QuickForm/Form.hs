@@ -25,9 +25,9 @@ instance Monoid a => Monoid (Form' r form a) where
   Form a `mappend` Form b = Form $ a <> b
 
 instance Show a => Show (Form' r form a) where
-  showsPrec n (Form a) = showParen (n > 10) $
-      showString "Form " .
-      showsPrec 11 a
+  showsPrec n (Form a) = showParen (n > 10)
+    $ showString "Form "
+    . showsPrec 11 a
 
 -- | Repack the form to update the phantom types
 reform :: Form' r form a -> Form' t' f' a

@@ -1,8 +1,7 @@
 module QuickForm
   (
   -- * Constructors
-    (:<:) (..)
-  , (:&:) (..)
+    (:*:) (..)
 
   -- * Form types
   , Form
@@ -19,6 +18,7 @@ module QuickForm
   , TextField
   , HiddenField
   , EnumField
+  , EnumError (..)
 
   -- * Validation
   , Validate (..)
@@ -34,14 +34,12 @@ module QuickForm
 
   -- * Lenses
   , subform
-  , topfield
 
   ) where
 
 import QuickForm.BranchValidation
 import QuickForm.Form
-import QuickForm.Lenses
-import QuickForm.Many
-import QuickForm.Sub
+import QuickForm.Lens
+import QuickForm.Pair
 import QuickForm.TypeLevel
 import QuickForm.Validation

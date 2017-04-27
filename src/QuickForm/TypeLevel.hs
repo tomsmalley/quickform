@@ -12,8 +12,7 @@ import Data.Set (Set)
 import GHC.TypeLits (Symbol)
 import Data.Kind
 
-import QuickForm.Sub
-import QuickForm.Many
+import QuickForm.Pair
 
 -- | Lifted data kind, available reduced types: 'Raw' is the type which can
 -- store the raw form values (e.g. Text from an <input> element), 'Hs' is the
@@ -24,7 +23,7 @@ type Raw = 'Raw
 type Err = 'Err
 type Hs = 'Hs
 
--- | Denotes a side of a combinator such as (a :&: b)
+-- | Denotes a side of a combinator such as (a :*: b)
 data WhichSide = First | Second | Both | Neither
 
 -- | Finds which side the target form is on
@@ -76,12 +75,12 @@ type ReduceErr a = ReduceErr' (FindError a) a
 type family ReduceErr' (which :: WhichSide) (form :: QuickForm) :: Type where
 
   ReduceErr' 'First (Validated e _ _) = Maybe (Set e)
-  ReduceErr' 'Both (Validated e _ b) = Maybe (Set e) :<: ReduceErr b
+  ReduceErr' 'Both (Validated e _ b) = (Maybe (Set e), ReduceErr b)
   ReduceErr' 'Second (Unvalidated _ b) = ReduceErr b
 
   ReduceErr' 'First (a :+: b) = ReduceErr a
   ReduceErr' 'Second (a :+: b) = ReduceErr b
-  ReduceErr' 'Both (a :+: b) = ReduceErr a :&: ReduceErr b
+  ReduceErr' 'Both (a :+: b) = ReduceErr a :*: ReduceErr b
 
   ReduceErr' w (Named _ ('EnumField _)) = Maybe (Set EnumError)
 
@@ -103,7 +102,7 @@ type family Reduce (r :: Reduced) (form :: QuickForm) :: Type where
   Reduce 'Raw (Unvalidated _ b) = Reduce 'Raw b
   Reduce 'Hs (Validated _ a _) = a
   Reduce 'Hs (Unvalidated a _) = a
-  Reduce r (a :+: b) = Reduce r a :&: Reduce r b
+  Reduce r (a :+: b) = Reduce r a :*: Reduce r b
 
   Reduce 'Raw (Named _ f) = RawType f
   Reduce 'Hs (Named _ f) = OutputType f
@@ -136,24 +135,3 @@ data QuickForm where
   (:+:) :: QuickForm -> QuickForm -> QuickForm
 
 infixr 9 :+:
-
---data Named (name :: Symbol) (::
-
-
---data GForm where
---  VF :: err -> output -> GForm
---  UF :: output -> GForm
---  NF :: (name :: Symbol) -> (field :: FieldType) -> GForm
---
---data SForm (f :: GForm) where
---  SVF :: SForm ('VF e o)
-
-
-
-
-
-
-
-
-
-

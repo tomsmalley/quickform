@@ -25,9 +25,8 @@ library
   exposed-modules:     QuickForm
                      , QuickForm.BranchValidation
                      , QuickForm.Form
-                     , QuickForm.Lenses
-                     , QuickForm.Many
-                     , QuickForm.Sub
+                     , QuickForm.Lens
+                     , QuickForm.Pair
                      , QuickForm.TypeLevel
                      , QuickForm.Validation
 

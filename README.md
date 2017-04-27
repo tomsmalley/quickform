@@ -163,25 +163,27 @@ a look at what these mean (these examples are slightly reformatted):
 ```
 ghci> :kind! Form Raw UserForm
 Form Raw UserForm :: *
-= Form' Raw UserForm (Text :&: (Text :&: Text) :&: Text :&: Text)
+= Form' Raw UserForm (Text :*: (Text :*: Text) :*: Text :*: Text)
 
 ghci> :kind! Form Err UserForm
 Form Err UserForm :: *
 = Form' Err UserForm
    ( Maybe (Set EmailError)
- :&: Maybe (Set PasswordError)
- :&: Maybe (Set EnumError))
+ :*: Maybe (Set PasswordError)
+ :*: Maybe (Set EnumError))
 
 ghci> :kind! Form Hs UserForm
 Form Hs UserForm :: *
-= Form' Hs UserForm (Email :&: Password :&: Colour :&: Film)
+= Form' Hs UserForm (Email :*: Password :*: Colour :*: Film)
 ```
 
 `:kind!` allows you to evaluate type functions in ghci. You may notice that the
 structure of these is roughly like the type we laid out earlier, but with parts
 missing when they are not used in that particular representation. For example,
 the error type omits the unvalidated film field completely, and the haskell type
-drops the inner `Named` information.
+drops the inner `Named` information. The `:+:` pair combinator has been changed
+to `:*:`, which also has a data constructor of the same name. The difference is
+that `:+:` has kind `QuickForm` and `:*:` has kind `*` or `Type`.
 
  ### Validation class
 
@@ -232,11 +234,11 @@ a single text field, but it is validated! So the return type changes to
 
 Finally we come to the double password field. We want the password to be at
 least 8 characters long, and both fields to match. We just pattern match on
-`:&:` to extract the `Text`s.
+`:*:` to extract the `Text`s.
 
 ```haskell
 instance Validation PasswordField where
-  validate (Form (t :&: t'))
+  validate (Form (t :*: t'))
     | S.null set = Valid $ Password t
     | otherwise  = Invalid set
     where set = S.fromList $ catMaybes [tooShort, matches]
@@ -261,9 +263,9 @@ entry for `UserForm`.
 
 > dog :: Form Raw UserForm
 > dog = Form $ "dave@dog.com"
->           :&: ("woof" :&: "woof2")
->           :&: "Bone"
->           :&: "Beethoven"
+>           :*: ("woof" :*: "woof2")
+>           :*: "Bone"
+>           :*: "Beethoven"
 
 ```
 
@@ -287,7 +289,7 @@ rawEmailField :: Text
 ghci> rawEmailField
 "dave@dog.com"
 ghci> rawPasswordField
-"woof" :&: "woof2"
+"woof" :*: "woof2"
 ghci> rawEnterPasswordField
 "woof"
 ```
@@ -319,9 +321,9 @@ forms:
 
 > cat :: Form Hs UserForm
 > cat = Form $ Email "top@cat.com"
->          :&: Password "meow"
->          :&: Purple
->          :&: Film "The Pink Panther"
+>          :*: Password "meow"
+>          :*: Purple
+>          :*: Film "The Pink Panther"
 
 ```
 ```
@@ -380,8 +382,8 @@ instances, which we have:
 ```
 ghci> validateAll dog
 Left (Form (Just (fromList [])
-        :&: Just (fromList [TooShort,Unmatching])
-        :&: Just (fromList [EnumReadFailed])))
+        :*: Just (fromList [TooShort,Unmatching])
+        :*: Just (fromList [EnumReadFailed])))
 ```
 
 Validation failed, as we would expect for the example given. Let's make one that
@@ -391,17 +393,17 @@ passes the rules:
 
 > monkey :: Form Raw UserForm
 > monkey = Form $ "matt@monkey.com"
->             :&: ("ilikebananas" :&: "ilikebananas")
->             :&: "Yellow"
->             :&: "Planet of the Apes"
+>             :*: ("ilikebananas" :*: "ilikebananas")
+>             :*: "Yellow"
+>             :*: "Planet of the Apes"
 
 ```
 ```
 ghci> validateAll monkey
 Right (Form (Email "matt@monkey.com"
-         :&: Password "ilikebananas"
-         :&: Yellow
-         :&: Film "Planet of the Apes"))
+         :*: Password "ilikebananas"
+         :*: Yellow
+         :*: Film "Planet of the Apes"))
 ```
 
 This function must always be called on the server after receiving the raw values
@@ -443,13 +445,13 @@ around when they should be deleted.
 ```
 ```
 ghci> vemail
-Form (Just (fromList []) :&: Nothing :&: Nothing)
+Form (Just (fromList []) :*: Nothing :*: Nothing)
 ghci> venterp
-Form (Nothing :&: Just (fromList [TooShort,Unmatching]) :&: Nothing)
+Form (Nothing :*: Just (fromList [TooShort,Unmatching]) :*: Nothing)
 ghci> vcolour
-Form (Nothing :&: Nothing :&: Just (fromList [EnumReadFailed]))
+Form (Nothing :*: Nothing :*: Just (fromList [EnumReadFailed]))
 ghci> vfilm
-Form (Nothing :&: Nothing :&: Nothing)
+Form (Nothing :*: Nothing :*: Nothing)
 ```
 
 Notice that the `Just` fields are the ones we asked it to validate, and the
