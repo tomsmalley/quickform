@@ -29,11 +29,11 @@ main = hspec $ do
 justEnumErr :: Maybe (S.Set EnumError)
 justEnumErr = Just $ S.singleton EnumReadFailed
 
-type N1 = Named "T" TextField
-type N2 = Named "H" HiddenField
-type N3 = Named "E" (EnumField Int)
+type N1 = Field "T" TextField
+type N2 = Field "H" HiddenField
+type N3 = Field "E" (EnumField Int)
 
-type V1 = Validated Bool Text (Named "e" (EnumField Int))
+type V1 = Validated Bool Text (Field "e" (EnumField Int))
 type V2 = Validated String Int V1
 instance Validation V1 where
   validate (Form 1) = Valid "1"
@@ -44,12 +44,12 @@ instance Validation V2 where
   validate (Form "2") = Invalid $ S.singleton "2"
   validate _ = Invalid $ S.singleton "3"
 
-type V3 = Validated Bool Int (Named "t" TextField)
+type V3 = Validated Bool Int (Field "t" TextField)
 instance Validation V3 where
   validate (Form "1") = Valid 1
   validate _ = Invalid $ S.singleton True
 
-type U1 = Unvalidated Bool (Named "t" TextField)
+type U1 = Unvalidated Bool (Field "t" TextField)
 instance Validation U1 where
   validate (Form "1") = True
   validate _ = False
@@ -57,18 +57,18 @@ type U2 = Unvalidated Bool V1
 instance Validation U2 where
   validate (Form "1") = True
   validate _ = False
-type U3 = Unvalidated Bool (Named "t" (EnumField Int))
+type U3 = Unvalidated Bool (Field "t" (EnumField Int))
 instance Validation U3 where
   validate (Form 1) = True
   validate _ = False
 
-type P1 = Named "1" (EnumField Int)
-      :+: Named "2" TextField
-      :+: Named "3" TextField
+type P1 = Field "1" (EnumField Int)
+      :+: Field "2" TextField
+      :+: Field "3" TextField
 
-type P2 = Named "1" (EnumField Int)
-      :+: Named "2" TextField
-      :+: Named "3" (EnumField Char)
+type P2 = Field "1" (EnumField Int)
+      :+: Field "2" TextField
+      :+: Field "3" (EnumField Char)
 
 -- Tests for constructing forms ------------------------------------------------
 
@@ -190,7 +190,7 @@ validation = describe "Validation" $ do
       validateAll (Form $ "a" :*: "2" :*: "3" :: Form Raw P2) `shouldBe`
         Left (Form $ justEnumErr :*: justEnumErr)
 
-  describe "Named fields" $ do
+  describe "Fields" $ do
     it "validates correctly for TextField" $ do
       validateAll (Form "test" :: Form Raw N1) `shouldBe`
         Form "test"
@@ -242,7 +242,7 @@ branchValidation = describe "Branch validation" $ do
 
   describe "Unvalidated forms" $ do
     it "should not typecheck" $ do
-      shouldNotTypecheck $ validateBranch @(Named "t" TextField) (Form @Raw @U1 "1")
+      shouldNotTypecheck $ validateBranch @(Field "t" TextField) (Form @Raw @U1 "1")
 
   describe "Validated parent" $ do
     it "validates and passes when referring to total form" $ do
@@ -282,29 +282,29 @@ branchValidation = describe "Branch validation" $ do
 
   describe "Pairs" $ do
     it "validates first field, not touching others" $ do
-      validateBranch @(Named "1" (EnumField Int))
+      validateBranch @(Field "1" (EnumField Int))
         (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
           Form (Just S.empty :*: Nothing)
     it "validates second field, not touching others" $ do
-      validateBranch @(Named "2" TextField)
+      validateBranch @(Field "2" TextField)
         (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
           Form (Nothing :*: Nothing)
     it "validates third field, not touching others" $ do
-      validateBranch @(Named "3" (EnumField Char))
+      validateBranch @(Field "3" (EnumField Char))
         (Form $ "1" :*: "2" :*: "'c'" :: Form Raw P2) `shouldBe`
           Form (Nothing :*: Just S.empty)
 
   describe "Pairs, no errors on right branch" $ do
     it "validates first field, not touching others" $ do
-      validateBranch @(Named "1" (EnumField Int))
+      validateBranch @(Field "1" (EnumField Int))
         (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
           Form (Just S.empty)
     it "validates second field, not touching others" $ do
-      validateBranch @(Named "2" TextField)
+      validateBranch @(Field "2" TextField)
         (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
           Form Nothing
     it "validates third field, not touching others" $ do
-      validateBranch @(Named "3" TextField)
+      validateBranch @(Field "3" TextField)
         (Form $ "1" :*: "2" :*: "3" :: Form Raw P1) `shouldBe`
           Form Nothing
 
@@ -320,175 +320,175 @@ lenses :: Spec
 lenses = describe "Lenses" $ do
 
   describe "Raw unvalidated fields" $ do
-    let form :: Form Raw (Unvalidated Int (Named "t" TextField))
+    let form :: Form Raw (Unvalidated Int (Field "t" TextField))
         form = Form "1"
     it "view should work for total field" $ do
-      form ^. subform @(Unvalidated Int (Named "t" TextField)) `shouldBe` "1"
+      form ^. subform @(Unvalidated Int (Field "t" TextField)) `shouldBe` "1"
     it "set should work for total field" $ do
-      (form & subform @(Unvalidated Int (Named "t" TextField)) .~ "2")
+      (form & subform @(Unvalidated Int (Field "t" TextField)) .~ "2")
         `shouldBe` Form "2"
     it "view should work for sub field" $ do
-      form ^. subform @(Named "t" TextField) `shouldBe` "1"
+      form ^. subform @(Field "t" TextField) `shouldBe` "1"
     it "set should work for sub field" $ do
-      (form & subform @(Named "t" TextField) .~ "2") `shouldBe` Form "2"
+      (form & subform @(Field "t" TextField) .~ "2") `shouldBe` Form "2"
 
   describe "Raw validated fields" $ do
-    let f :: Form Raw (Validated Bool Int (Named "t" TextField))
+    let f :: Form Raw (Validated Bool Int (Field "t" TextField))
         f = Form "1"
     it "view" $ do
-      f ^. subform @(Named "t" TextField) `shouldBe` "1"
+      f ^. subform @(Field "t" TextField) `shouldBe` "1"
     it "set" $ do
-      (f & subform @(Named "t" TextField) .~ "2") `shouldBe` Form "2"
+      (f & subform @(Field "t" TextField) .~ "2") `shouldBe` Form "2"
     it "view total" $ do
-      f ^. subform @(Validated Bool Int (Named "t" TextField)) `shouldBe` "1"
+      f ^. subform @(Validated Bool Int (Field "t" TextField)) `shouldBe` "1"
     it "set total" $ do
-      (f & subform @(Validated Bool Int (Named "t" TextField)) .~ "2")
+      (f & subform @(Validated Bool Int (Field "t" TextField)) .~ "2")
         `shouldBe` Form "2"
 
   describe "Hs unvalidated fields" $ do
-    let form :: Form Hs (Unvalidated Int (Named "t" TextField))
+    let form :: Form Hs (Unvalidated Int (Field "t" TextField))
         form = Form 1
     it "should not typecheck for sub field access" $ do
-      shouldNotTypecheck $ form ^. subform @(Named "t" TextField)
+      shouldNotTypecheck $ form ^. subform @(Field "t" TextField)
     it "view should work for total field" $ do
-      form ^. subform @(Unvalidated Int (Named "t" TextField))
+      form ^. subform @(Unvalidated Int (Field "t" TextField))
         `shouldBe` 1
     it "set should work for total field" $ do
-      (form & subform @(Unvalidated Int (Named "t" TextField)) .~ 2)
+      (form & subform @(Unvalidated Int (Field "t" TextField)) .~ 2)
         `shouldBe` Form 2
 
   describe "Err unvalidated fields" $ do
-    let form :: Form Err (Unvalidated Int (Named "t" (EnumField Char)))
+    let form :: Form Err (Unvalidated Int (Field "t" (EnumField Char)))
         form = Form justEnumErr
     it "should not typecheck unvalidated top field access" $ do
-      shouldNotTypecheck $ form ^. subform @(Named "t" TextField) . _1
+      shouldNotTypecheck $ form ^. subform @(Field "t" TextField) . _1
     it "view should work for validated sub field" $ do
-      form ^. subform @(Named "t" (EnumField Char)) `shouldBe` justEnumErr
+      form ^. subform @(Field "t" (EnumField Char)) `shouldBe` justEnumErr
     it "set should work for validated sub field" $ do
-      (form & subform @(Named "t" (EnumField Char)) .~ Nothing)
+      (form & subform @(Field "t" (EnumField Char)) .~ Nothing)
         `shouldBe` Form Nothing
     it "view should work for total field" $ do
-      form ^. subform @(Unvalidated Int (Named "t" (EnumField Char)))
+      form ^. subform @(Unvalidated Int (Field "t" (EnumField Char)))
         `shouldBe` justEnumErr
     it "set should work for total field" $ do
-      (form & subform @(Unvalidated Int (Named "t" (EnumField Char))) .~ Nothing)
+      (form & subform @(Unvalidated Int (Field "t" (EnumField Char))) .~ Nothing)
         `shouldBe` Form Nothing
 
   describe "Err validated fields" $ do
-    let unvalSub :: Form Err (Validated Bool Int (Named "t" TextField))
+    let unvalSub :: Form Err (Validated Bool Int (Field "t" TextField))
         unvalSub = Form err
         err = Just $ S.singleton False
         err' = Just $ S.singleton True
-        valSub :: Form Err (Validated Bool Int (Named "t" (EnumField Char)))
+        valSub :: Form Err (Validated Bool Int (Field "t" (EnumField Char)))
         valSub = Form (err, justEnumErr)
-        valSub' :: Form Err (Validated Bool Int (Named "t" (EnumField Char)))
+        valSub' :: Form Err (Validated Bool Int (Field "t" (EnumField Char)))
         valSub' = Form (err, Nothing)
     it "should not typecheck unvalidated subfield access" $ do
-      shouldNotTypecheck $ unvalSub ^. subform @(Named "t" TextField)
+      shouldNotTypecheck $ unvalSub ^. subform @(Field "t" TextField)
     it "view should work for validated sub field" $ do
-      valSub ^. subform @(Named "t" (EnumField Char)) `shouldBe` justEnumErr
+      valSub ^. subform @(Field "t" (EnumField Char)) `shouldBe` justEnumErr
     it "set should work for validated sub field" $ do
-      (valSub & subform @(Named "t" (EnumField Char)) .~ Nothing)
+      (valSub & subform @(Field "t" (EnumField Char)) .~ Nothing)
         `shouldBe` valSub'
     it "view should work for total field" $ do
-      valSub ^. subform @(Validated Bool Int (Named "t" (EnumField Char)))
+      valSub ^. subform @(Validated Bool Int (Field "t" (EnumField Char)))
         `shouldBe` (err, justEnumErr)
     it "view should work for top field" $ do
-      valSub ^. subform @(Validated Bool Int (Named "t" (EnumField Char)))
+      valSub ^. subform @(Validated Bool Int (Field "t" (EnumField Char)))
               . _1 `shouldBe` err
     it "set should work for total field" $ do
-      (valSub & subform @(Validated Bool Int (Named "t" (EnumField Char)))
+      (valSub & subform @(Validated Bool Int (Field "t" (EnumField Char)))
               .~ (err', Nothing)) `shouldBe` Form (err', Nothing)
     it "set should work for top field" $ do
-      (valSub & subform @(Validated Bool Int (Named "t" (EnumField Char)))
+      (valSub & subform @(Validated Bool Int (Field "t" (EnumField Char)))
               . _1 .~ err') `shouldBe` Form (err', justEnumErr)
 
   describe "Raw pairs" $ do
-    let form :: Form Raw (Named "1" TextField :+: Named "2" TextField)
+    let form :: Form Raw (Field "1" TextField :+: Field "2" TextField)
         form = Form $ "1" :*: "2"
     it "view should work on the total field" $ do
-      form ^. subform @(Named "1" TextField :+: Named "2" TextField)
+      form ^. subform @(Field "1" TextField :+: Field "2" TextField)
         `shouldBe` "1" :*: "2"
     it "set should work on the total field" $ do
-      (form & subform @(Named "1" TextField :+: Named "2" TextField)
+      (form & subform @(Field "1" TextField :+: Field "2" TextField)
         .~ "3" :*: "4")
         `shouldBe` Form ("3" :*: "4")
     it "view should work on the first field" $ do
-      form ^. subform @(Named "1" TextField) `shouldBe` "1"
+      form ^. subform @(Field "1" TextField) `shouldBe` "1"
     it "set should work on the first field" $ do
-      (form & subform @(Named "1" TextField) .~ "A")
+      (form & subform @(Field "1" TextField) .~ "A")
         `shouldBe` Form ("A" :*: "2")
     it "view should work on the second field" $ do
-      form ^. subform @(Named "2" TextField) `shouldBe` "2"
+      form ^. subform @(Field "2" TextField) `shouldBe` "2"
     it "set should work on the second field" $ do
-      (form & subform @(Named "2" TextField) .~ "A")
+      (form & subform @(Field "2" TextField) .~ "A")
         `shouldBe` Form ("1" :*: "A")
 
   describe "Hs pairs" $ do
-    let form :: Form Hs (Named "1" (EnumField Bool) :+: Named "2" TextField)
+    let form :: Form Hs (Field "1" (EnumField Bool) :+: Field "2" TextField)
         form = Form $ True :*: "2"
     it "view should work on the total field" $ do
-      form ^. subform @(Named "1" (EnumField Bool) :+: Named "2" TextField)
+      form ^. subform @(Field "1" (EnumField Bool) :+: Field "2" TextField)
         `shouldBe` True :*: "2"
     it "set should work on the total field" $ do
-      (form & subform @(Named "1" (EnumField Bool) :+: Named "2" TextField)
+      (form & subform @(Field "1" (EnumField Bool) :+: Field "2" TextField)
             .~ False :*: "4") `shouldBe` Form (False :*: "4")
     it "view should work on the first field" $ do
-      form ^. subform @(Named "1" (EnumField Bool)) `shouldBe` True
+      form ^. subform @(Field "1" (EnumField Bool)) `shouldBe` True
     it "set should work on the first field" $ do
-      (form & subform @(Named "1" (EnumField Bool)) .~ False)
+      (form & subform @(Field "1" (EnumField Bool)) .~ False)
         `shouldBe` Form (False :*: "2")
     it "view should work on the second field " $ do
-      form ^. subform @(Named "2" TextField) `shouldBe` "2"
+      form ^. subform @(Field "2" TextField) `shouldBe` "2"
     it "set should work on the second field" $ do
-      (form & subform @(Named "2" TextField) .~ "A")
+      (form & subform @(Field "2" TextField) .~ "A")
         `shouldBe` Form (True :*: "A")
 
   describe "Err pairs, both errors" $ do
-    let form :: Form Err (Named "1" (EnumField Bool)
-                          :+: Validated Int Text (Named "2" TextField))
+    let form :: Form Err (Field "1" (EnumField Bool)
+                          :+: Validated Int Text (Field "2" TextField))
         form = Form $ justEnumErr :*: intErr
         intErr = Just (S.singleton 1)
     it "view should work on the total field" $ do
-      form ^. subform @(Named "1" (EnumField Bool)
-                    :+: Validated Int Text (Named "2" TextField)) `shouldBe`
+      form ^. subform @(Field "1" (EnumField Bool)
+                    :+: Validated Int Text (Field "2" TextField)) `shouldBe`
         justEnumErr :*: intErr
     it "set should work on the total field" $ do
-      (form & subform @(Named "1" (EnumField Bool)
-                    :+: Validated Int Text (Named "2" TextField))
+      (form & subform @(Field "1" (EnumField Bool)
+                    :+: Validated Int Text (Field "2" TextField))
             .~ Nothing :*: Just S.empty) `shouldBe`
         Form (Nothing :*: Just S.empty)
     it "view should work on the first field" $ do
-      form ^. subform @(Named "1" (EnumField Bool)) `shouldBe` justEnumErr
+      form ^. subform @(Field "1" (EnumField Bool)) `shouldBe` justEnumErr
     it "set should work on the first field" $ do
-      (form & subform @(Named "1" (EnumField Bool)) .~ Nothing) `shouldBe`
+      (form & subform @(Field "1" (EnumField Bool)) .~ Nothing) `shouldBe`
         Form (Nothing :*: intErr)
     it "view should work on the second field" $ do
-      form ^. subform @(Validated Int Text (Named "2" TextField)) `shouldBe`
+      form ^. subform @(Validated Int Text (Field "2" TextField)) `shouldBe`
         intErr
     it "set should work on the second field" $ do
-      (form & subform @(Validated Int Text (Named "2" TextField)) .~ Nothing)
+      (form & subform @(Validated Int Text (Field "2" TextField)) .~ Nothing)
         `shouldBe` Form (justEnumErr :*: Nothing)
 
   describe "Err pairs, first errors" $ do
-    let form :: Form Err (Named "1" (EnumField Bool) :+: Named "2" TextField)
+    let form :: Form Err (Field "1" (EnumField Bool) :+: Field "2" TextField)
         form = Form justEnumErr
     it "should not typecheck on second field access" $ do
-      shouldNotTypecheck $ form ^. subform @(Named "2" TextField)
+      shouldNotTypecheck $ form ^. subform @(Field "2" TextField)
     it "view should work on the first field" $ do
-      form ^. subform @(Named "1" (EnumField Bool)) `shouldBe` justEnumErr
+      form ^. subform @(Field "1" (EnumField Bool)) `shouldBe` justEnumErr
     it "set should work on the first field" $ do
-      (form & subform @(Named "1" (EnumField Bool)) .~ Nothing) `shouldBe`
+      (form & subform @(Field "1" (EnumField Bool)) .~ Nothing) `shouldBe`
         Form Nothing
 
   describe "Err pairs, second errors" $ do
-    let form :: Form Err (Named "1" TextField :+: Named "2" (EnumField Bool))
+    let form :: Form Err (Field "1" TextField :+: Field "2" (EnumField Bool))
         form = Form justEnumErr
     it "should not typecheck on first field access" $ do
-      shouldNotTypecheck $ form ^. subform @(Named "1" TextField)
+      shouldNotTypecheck $ form ^. subform @(Field "1" TextField)
     it "view should work on the second field" $ do
-      form ^. subform @(Named "2" (EnumField Bool)) `shouldBe` justEnumErr
+      form ^. subform @(Field "2" (EnumField Bool)) `shouldBe` justEnumErr
     it "set should work on the second field" $ do
-      (form & subform @(Named "2" (EnumField Bool)) .~ Nothing) `shouldBe`
+      (form & subform @(Field "2" (EnumField Bool)) .~ Nothing) `shouldBe`
         Form Nothing
 

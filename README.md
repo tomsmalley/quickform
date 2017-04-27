@@ -49,8 +49,8 @@ Now let's build our form type. We have a type level few combinators available to
 us, all of which have kind `QuickForm`, made available by DataKinds. This ensures
 you can only construct logically valid form structures.
 
-First, you need to know about `Named`. These are the most basic form
-elements, and just represent concrete HTML fields. `Named` takes two type
+First, you need to know about `Field`. These are the most basic form
+elements, and just represent concrete HTML fields. `Field` takes two type
 parameters, the first of kind `Symbol` (which is a type level string), and the
 second of kind `FieldType`. The `Symbol` is used as the field's HTML `name`. The
 `FieldType` denotes the element used to display it, governing how values are
@@ -61,8 +61,8 @@ Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
-> type EnterPasswordField = Named "password" TextField
-> type RepeatPasswordField = Named "password-repeat" TextField
+> type EnterPasswordField = Field "password" TextField
+> type RepeatPasswordField = Field "password-repeat" TextField
 
 ```
 
@@ -72,7 +72,7 @@ the type we want to use to provide the field data and get back after validation.
 
 ```haskell
 
-> type ColourField = Named "colour" (EnumField Colour)
+> type ColourField = Field "colour" (EnumField Colour)
 
 ```
 
@@ -86,7 +86,7 @@ unvalidated forms just convert to it with no potential for failure.
 
 ```haskell
 
-> type FilmField = Unvalidated Film (Named "film" TextField)
+> type FilmField = Unvalidated Film (Field "film" TextField)
 
 ```
 
@@ -108,7 +108,7 @@ representing failure and the right hand side representing success.
 
 ```haskell
 
-> type EmailField = Validated EmailError Email (Named "email" TextField)
+> type EmailField = Validated EmailError Email (Field "email" TextField)
 
 ```
 
@@ -181,7 +181,7 @@ Form Hs UserForm :: *
 structure of these is roughly like the type we laid out earlier, but with parts
 missing when they are not used in that particular representation. For example,
 the error type omits the unvalidated film field completely, and the haskell type
-drops the inner `Named` information. The `:+:` pair combinator has been changed
+drops the inner `Field` information. The `:+:` pair combinator has been changed
 to `:*:`, which also has a data constructor of the same name. The difference is
 that `:+:` has kind `QuickForm` and `:*:` has kind `*` or `Type`.
 
@@ -204,7 +204,7 @@ serverside validation is done in the handler, after performing full form
 validation.
 
 Let's have a look at our example; first off, the unvalidated film field. The sub
-field in this case is `Named "film" TextField`, so the haskell type will
+field in this case is `Field "film" TextField`, so the haskell type will
 just be `Text`. Since it is unvalidated, we can always produce a `Film` value
 given a `Text` value.
 
@@ -299,19 +299,19 @@ kind and we will get a compile error telling us the kinds don't match. But what
 if we try to access a valid subform which doesn't actually exist in the form?
 
 ```
-ghci> dog ^. subform @(Named "not here" TextField)
+ghci> dog ^. subform @(Field "not here" TextField)
 
 <interactive>:45:8: error:
     • Attempted access of sub form
-        ‘'Named "not here" TextField’
+        ‘'Field "not here" TextField’
       But it does not exist in the given form
-        ‘'Validated EmailError Email (Named "email" TextField)
+        ‘'Validated EmailError Email (Field "email" TextField)
          ':+: (PasswordField ':+: (ColourField :+: FilmField))’
     • In the second argument of ‘(^.)’, namely
-        ‘subform @(Named "not here" TextField)’
-      In the expression: dog ^. subform @(Named "not here" TextField)
+        ‘subform @(Field "not here" TextField)’
+      In the expression: dog ^. subform @(Field "not here" TextField)
       In an equation for ‘it’:
-          it = dog ^. subform @(Named "not here" TextField)
+          it = dog ^. subform @(Field "not here" TextField)
 ```
 
 We get a nice custom type error. `subform` also works on haskell and error
@@ -339,7 +339,7 @@ ghci> cat ^. subform @EnterPasswordField
 
 <interactive>:63:7: error:
     • Attempted access of erased sub form
-        ‘'Named "password" TextField’
+        ‘'Field "password" TextField’
       It exists in the given form
         ‘'Validated PasswordError Password
          (EnterPasswordField :+: RepeatPasswordField)’

@@ -1,26 +1,40 @@
 module QuickForm
   (
-  -- * Constructors
-    (:*:) (..)
 
-  -- * Form types
-  , Form
-  , Form' (Form, unForm)
-  , reform
-  , Raw
-  , Hs
-  , Err
+  -- * Type level
 
+  -- ** QuickForm types
+    QuickForm
   , Validated
   , Unvalidated
-  , Named
+  , Field
   , (:+:)
+
+  -- ** Field types
+  , FieldType
   , TextField
   , HiddenField
   , EnumField
   , EnumError (..)
 
+  -- * Term level
+
+  -- ** Form types
+  , Form (Form, unForm)
+  , reform
+
+  -- ** Reduced types
+  , Reduced
+  , Raw
+  , Hs
+  , Err
+
+  -- ** Constructors
+  , (:*:) (..)
+
   -- * Validation
+
+  -- ** Validation class
   , Validate (..)
   , Validation (..)
   , ValidationType

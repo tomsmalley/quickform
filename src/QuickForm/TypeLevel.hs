@@ -7,23 +7,69 @@ module QuickForm.TypeLevel where
 
 import Data.Aeson
 import GHC.Generics (Generic)
-import Data.Text (Text)
-import Data.Set (Set)
 import GHC.TypeLits (Symbol)
 import Data.Kind
 
-import QuickForm.Pair
+-- | QuickForm combinators. These are all used as lifted types by DataKinds.
+data QuickForm where
+  -- | Convert the sub form to a type
+  Unvalidated :: Type -> QuickForm -> QuickForm
+  -- | Validate the sub form to a failure type or a success type
+  Validated :: Type -> Type -> QuickForm -> QuickForm
+  -- | 'Field' wraps a base 'FieldType' with a 'Symbol' representing the
+  -- HTML "name" property of a concrete field element
+  Field :: Symbol -> FieldType -> QuickForm
+  -- | Combine two 'QuickForm's to make a larger form
+  (:+:) :: QuickForm -> QuickForm -> QuickForm
 
--- | Lifted data kind, available reduced types: 'Raw' is the type which can
--- store the raw form values (e.g. Text from an <input> element), 'Hs' is the
--- validated haskell type, and 'Err' stores any errors that occur during
--- validation.
-data Reduced = Raw | Hs | Err
-type Raw = 'Raw
-type Err = 'Err
-type Hs = 'Hs
+-- | Convert the sub form @b@ :: 'QuickForm' to type @a@.
+-- This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'QuickForm'.
+type Unvalidated a b = 'Unvalidated a b
+-- | Validate the sub form @b@ :: 'QuickForm' to type @a@ if successful, otherwise
+-- to type @e@.
+-- This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'QuickForm'.
+type Validated e a b = 'Validated e a b
+-- | Represents a concrete HTML field element with name @n@ and type @t@ ::
+-- 'FieldType'.
+-- This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'QuickForm'.
+type Field n t = 'Field n t
+-- | Combine @a@ :: 'QuickForm' with @b@ :: 'QuickForm'. This can be chained to
+-- as many fields / sub forms as you require.
+-- This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'QuickForm'.
+type (:+:) a b = a ':+: b
+infixr 9 :+:
 
--- | Denotes a side of a combinator such as (a :*: b)
+-- | Field types available
+data FieldType where
+  -- | Simple input field
+  TextField :: FieldType
+  -- | Hidden input field
+  HiddenField :: FieldType
+  -- | Enum field (dropdown or radio). Takes a type giving the data source.
+  EnumField :: Type -> FieldType
+
+-- | This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'FieldType'.
+type TextField = 'TextField
+-- | This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'FieldType'.
+type HiddenField = 'HiddenField
+-- | This convenience type means you don't have to put ticks before using the
+-- lifted constructor. It has kind 'FieldType'.
+type EnumField a = 'EnumField a
+
+-- | Reading enum fields into their given type can fail (realistically only if a
+-- user was to edit the HTML or send a custom request).
+data EnumError = EnumReadFailed
+  deriving (Eq, Show, Ord, Generic)
+instance ToJSON EnumError
+instance FromJSON EnumError
+
+-- | Denotes a side of a combinator such as (a :+: b)
 data WhichSide = First | Second | Both | Neither
 
 -- | Finds which side the target form is on
@@ -62,76 +108,9 @@ type family FindError (form :: QuickForm) :: WhichSide where
 
 -- | Find if a given form has validated forms somewhere inside it
 type family HasError (form :: QuickForm) :: Bool where
-  HasError (Named _ ('EnumField _)) = 'True
-  HasError (Named _ _) = 'False
+  HasError (Field _ ('EnumField _)) = 'True
+  HasError (Field _ _) = 'False
   HasError (Validated _ _ _) = 'True
   HasError (Unvalidated _ b) = HasError b
   HasError (a :+: b) = HasError a `Or` HasError b
 
--- | Use this instead of directly using type function
-type ReduceErr a = ReduceErr' (FindError a) a
-
--- | Build the error type for a given form, only using the validated forms
-type family ReduceErr' (which :: WhichSide) (form :: QuickForm) :: Type where
-
-  ReduceErr' 'First (Validated e _ _) = Maybe (Set e)
-  ReduceErr' 'Both (Validated e _ b) = (Maybe (Set e), ReduceErr b)
-  ReduceErr' 'Second (Unvalidated _ b) = ReduceErr b
-
-  ReduceErr' 'First (a :+: b) = ReduceErr a
-  ReduceErr' 'Second (a :+: b) = ReduceErr b
-  ReduceErr' 'Both (a :+: b) = ReduceErr a :*: ReduceErr b
-
-  ReduceErr' w (Named _ ('EnumField _)) = Maybe (Set EnumError)
-
--- | Get the shallowest output type of an element
-type family OutputType (form :: FieldType) :: Type where
-  OutputType 'TextField = Text
-  OutputType 'HiddenField = Text
-  OutputType ('EnumField o) = o
-
--- | Get the raw type of an element
-type family RawType (form :: FieldType) :: Type where
-  RawType 'TextField = Text
-  RawType 'HiddenField = Text
-  RawType ('EnumField _) = Text
-
-type family Reduce (r :: Reduced) (form :: QuickForm) :: Type where
-  Reduce 'Err a = ReduceErr a
-  Reduce 'Raw (Validated _ _ b) = Reduce 'Raw b
-  Reduce 'Raw (Unvalidated _ b) = Reduce 'Raw b
-  Reduce 'Hs (Validated _ a _) = a
-  Reduce 'Hs (Unvalidated a _) = a
-  Reduce r (a :+: b) = Reduce r a :*: Reduce r b
-
-  Reduce 'Raw (Named _ f) = RawType f
-  Reduce 'Hs (Named _ f) = OutputType f
-
--- | Chainable forms
-
-data EnumError = EnumReadFailed
-  deriving (Eq, Show, Ord, Generic)
-instance ToJSON EnumError
-instance FromJSON EnumError
-
-type TextField = 'TextField
-type HiddenField = 'HiddenField
-type EnumField a = 'EnumField a
-
-data FieldType where
-  TextField :: FieldType
-  HiddenField :: FieldType
-  EnumField :: Type -> FieldType
-
-type Unvalidated = 'Unvalidated
-type Validated = 'Validated
-type Named = 'Named
-type (:+:) a b = a ':+: b
-
-data QuickForm where
-  Unvalidated :: Type -> QuickForm -> QuickForm
-  Validated :: Type -> Type -> QuickForm -> QuickForm
-  Named :: Symbol -> FieldType -> QuickForm
-  (:+:) :: QuickForm -> QuickForm -> QuickForm
-
-infixr 9 :+:

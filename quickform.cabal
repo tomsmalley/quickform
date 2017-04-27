@@ -53,7 +53,7 @@ test-suite quickform-test
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   cpp-options:         -DNO_FANCY_ERRORS
   -- Stack doesn't seem to use this, so use --flag quickform:NoErrors when
-  -- testing or you may get a lot of errors due to not catching compile time errors
+  -- testing or you may get a lot of errors due to should-not-typecheck
 
   build-depends:       base
                      , quickform

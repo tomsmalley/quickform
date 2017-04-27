@@ -68,7 +68,7 @@ instance {-# INCOHERENT #-} FormLensEither (Validated e a b) c 'Err
 
 -- Pair form lenses ------------------------------------------------------------
 
--- | Lenses into pair types (a :*: b), and (a :<: b) for 'Err' types.
+-- | Lenses into pair types (a :*: b), and subforms for 'Err' types.
 -- This class uses overlap techniques described here:
 -- <https://wiki.haskell.org/GHC/AdvancedOverlap>
 -- It is identical to 'FormLens' except for two extra type parameters:
@@ -98,7 +98,7 @@ instance (FormLens b c 'Err, HasError b ~ 'True)
 instance (FormLens b c 'Err, HasError b ~ 'True)
   => FormLensEither' 'Second 'Both (Validated e a b) c 'Err where
     formEither' f (Form (a, b))
-      = reform . fmap (\b' -> (a, b')) <$> subform' @b @c @'Err f (Form b)
+      = Form . (\b' -> (a, b')) . unForm <$> subform' @b @c @'Err f (Form b)
     {-# INLINE formEither' #-}
 
 -- Raw type lenses, pair forms -------------------------------------------------
@@ -106,13 +106,13 @@ instance (FormLens b c 'Err, HasError b ~ 'True)
 instance FormLens a c 'Raw
   => FormLensEither' 'First err (a :+: b) c 'Raw where
     formEither' f (Form (a :*: b))
-      = reform . fmap (:*: b) <$> subform' @a @c @'Raw f (Form a)
+      = Form . (:*: b) . unForm <$> subform' @a @c @'Raw f (Form a)
     {-# INLINE formEither' #-}
 
 instance FormLens b c 'Raw
   => FormLensEither' 'Second err (a :+: b) c 'Raw where
     formEither' f (Form (a :*: b))
-      = reform . fmap (a :*:) <$> subform' @b @c @'Raw f (Form b)
+      = Form . (a :*:) . unForm <$> subform' @b @c @'Raw f (Form b)
     {-# INLINE formEither' #-}
 
 -- Haskell type lenses, pair forms --------------------------------------------
@@ -121,14 +121,14 @@ instance FormLens b c 'Raw
 instance FormLens a c 'Hs
   => FormLensEither' 'First err (a :+: b) c 'Hs where
     formEither' f (Form (a :*: b))
-      = reform . fmap (:*: b) <$> subform' @a @c @'Hs f (Form a)
+      = Form . (:*: b) . unForm <$> subform' @a @c @'Hs f (Form a)
     {-# INLINE formEither' #-}
 
 -- | Lens into the second value of a pair
 instance FormLens b c 'Hs
   => FormLensEither' 'Second err (a :+: b) c 'Hs where
     formEither' f (Form (a :*: b))
-      = reform . fmap (a :*:) <$> subform' @b @c @'Hs f (Form b)
+      = Form . (a :*:) . unForm <$> subform' @b @c @'Hs f (Form b)
     {-# INLINE formEither' #-}
 
 -- Error type lenses, pair forms -----------------------------------------------
@@ -137,14 +137,14 @@ instance FormLens b c 'Hs
 instance (FormLens a c 'Err, HasError a ~ 'True, HasError b ~ 'True)
   => FormLensEither' 'First 'Both (a :+: b) c 'Err where
     formEither' f (Form (a :*: b))
-      = reform . fmap (:*: b) <$> subform' @a @c @'Err f (Form a)
+      = Form . (:*: b) . unForm <$> subform' @a @c @'Err f (Form a)
     {-# INLINE formEither' #-}
 
 -- | Lens into the second error of a pair, where both have errors
 instance (FormLens b c 'Err, HasError a ~ 'True, HasError b ~ 'True)
   => FormLensEither' 'Second 'Both (a :+: b) c 'Err where
     formEither' f (Form (a :*: b))
-      = reform . fmap (a :*:) <$> subform' @b @c @'Err f (Form b)
+      = Form . (a :*:) . unForm <$> subform' @b @c @'Err f (Form b)
     {-# INLINE formEither' #-}
 
 -- | Lens into the first error of a pair, where only the first has errors
@@ -199,7 +199,7 @@ type family LensError' (form :: QuickForm) (sub :: QuickForm)
     ':$$: 'Text "It exists in the given form"
     ':$$: 'Text "  ‘" ':<>: 'ShowType form ':<>: 'Text "’"
     ':$$: 'Text "But not after the form is reduced to its error type"
-    ':$$: 'Text "  ‘" ':<>: 'ShowType (ReduceErr form) ':<>: 'Text "’")
+    ':$$: 'Text "  ‘" ':<>: 'ShowType (Reduce Err form) ':<>: 'Text "’")
 
   LensError' form sub 'True 'Hs = TypeError
     ('Text "Attempted access of erased sub form"

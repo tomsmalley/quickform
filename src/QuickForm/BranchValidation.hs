@@ -2,6 +2,8 @@
 {-# OPTIONS_HADDOCK hide #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
+-- | This module encapsulates branch-wise validation of forms (i.e. only
+-- validating the relevant fields).
 module QuickForm.BranchValidation where
 
 import GHC.TypeLits (TypeError, ErrorMessage(..))
@@ -14,155 +16,146 @@ import QuickForm.Validation
 
 -- Validation by branch --------------------------------------------------------
 
-validateBranch :: forall sub form. ValidatePartial form sub
-               => Form 'Raw form -> Form 'Err form
-validateBranch = validatePartial @form @sub
+-- | Validate a specific part of a form. Use a type application to specify
+-- @sub@, and this function will only validate the relevant branch of the form.
+-- Cases where fields are not validated are returned as `Nothing`, fields which
+-- are validated and successful are returned as `Just` `mempty`.
+validateBranch :: forall sub form. ValidateBranch sub form
+               => Form Raw form -> Form Err form
+validateBranch = validateBranch' @(FindSub form sub) @(FindError form) @sub
 
-validatePartial :: forall form sub. ValidatePartial form sub
-  => Form 'Raw form -> Form 'Err form
-validatePartial = validatePartial' @(FindError form) @form @sub
+-- | Ensure we apply the correct type functions when used as a constraint
+type ValidateBranch sub form
+  = ValidateBranch' (FindSub form sub) (FindError form) sub form
 
-type ValidatePartial form sub = ValidatePartial' (FindError form) form sub
+-- | Partial validation class for "pair" types (anything where the shape changes
+-- depending on where the errors are). FindSub and FindError are "pulled up" to
+-- the instance head so that we can pattern match on them, this overlap
+-- technique is described here: <https://wiki.haskell.org/GHC/AdvancedOverlap>
+-- Don't use this class / function except to define instances, instead use the
+-- unticked versions above.
+class ValidateBranch' (findSub :: WhichSide) (findError :: WhichSide)
+                      (sub :: QuickForm) (form :: QuickForm) where
+  validateBranch' :: Form Raw form -> Form Err form
 
-class ValidatePartial' (errorLocation :: WhichSide) (form :: QuickForm) (sub :: QuickForm) where
-  validatePartial' :: Form 'Raw form -> Form 'Err form
+-- Instances -------------------------------------------------------------------
+
+-- | Found the sub in the form, just validate it all
+instance
+  ( ValidateAll a
+  , EmptySetErrors (Reduce Err a)
+  , HasError a ~ 'True
+  ) => ValidateBranch' findSub r a a where
+    validateBranch' = either id (const $ Form emptySetErrors) . validateAll @a
 
 -- | Validated parents require full validation
 instance {-# INCOHERENT #-}
   ( ValidateAll form
-  , EmptySetErrors (Reduce 'Err form)
+  , EmptySetErrors (Reduce Err form)
   , form ~ (Validated e a b)
-  ) => ValidatePartial' err (Validated e a b) sub where
-    validatePartial'
+  ) => ValidateBranch' findSub err sub (Validated e a b) where
+    validateBranch'
       = either id (const $ Form emptySetErrors) . validateAll
 
--- Unnamed unvalidated parents just partially validate the relavant sub form
+-- | Unnamed unvalidated parents just partially validate the relavant sub form
 instance {-# INCOHERENT #-}
-  ( ValidatePartial b sub
+  ( ValidateBranch sub b
   , HasError b ~ 'True
-  ) => ValidatePartial' 'Second (Unvalidated a b) sub where
-    validatePartial' = reform . validatePartial @b @sub . reform
+  ) => ValidateBranch' findSub 'Second sub (Unvalidated a b) where
+    validateBranch' = reform . validateBranch @sub @b . reform
 
--- | Found the form, just validate it all
+-- Pair instances --------------------------------------------------------------
+
+-- | Validate left branch when right branch doesn't have errors
 instance
-  ( ValidateAll a
-  , EmptySetErrors (ReduceErr a)
-  , HasError a ~ 'True
-  ) => ValidatePartial' r a a where
-    validatePartial' = either id (const $ Form emptySetErrors) . validateAll @a
-
--- | Validate single branch of pair
-instance {-# INCOHERENT #-} ValidatePartialEither (a :+: b) sub
-  => ValidatePartial' err (a :+: b) sub where
-    validatePartial' = validatePartialEither @(a :+: b) @sub
-
-validatePartialEither :: forall form sub. ValidatePartialEither form sub
-  => Form 'Raw form -> Form 'Err form
-validatePartialEither
-  = validatePartialEither' @(FindSub form sub) @(FindError form) @form @sub
-
-type ValidatePartialEither form sub
-  = ValidatePartialEither' (FindSub form sub) (FindError form) form sub
-
-class ValidatePartialEither' (fieldLocation :: WhichSide)
-                             (errorLocation :: WhichSide)
-                             (form :: QuickForm) (sub :: QuickForm) where
-  validatePartialEither' :: Form 'Raw form -> Form 'Err form
-
--- Validate left branch when right branch doesn't have errors
-instance
-  ( ValidatePartial a sub
+  ( ValidateBranch sub a
   , HasError a ~ 'True
   , HasError b ~ 'False
-  ) => ValidatePartialEither' 'First 'First (a :+: b) sub where
-  validatePartialEither' (Form (a :*: _))
-    = reform $ validatePartial @a @sub (Form a)
+  ) => ValidateBranch' 'First 'First sub (a :+: b) where
+  validateBranch' (Form (a :*: _))
+    = reform $ validateBranch @sub @a (Form a)
 
--- Validate left branch when right branch only has errors
+-- | Validate right branch when left branch doesn't have errors
+instance
+  ( ValidateBranch sub b
+  , HasError a ~ 'False
+  , HasError b ~ 'True
+  ) => ValidateBranch' 'Second 'Second sub (a :+: b) where
+  validateBranch' (Form (_ :*: b))
+    = reform $ validateBranch @sub @b (Form b)
+
+-- | Validate left branch when right branch only has errors
 instance
   ( ValidateAll a
   , HasError a ~ 'False
   , HasError b ~ 'True
-  , Monoid (Reduce 'Err b)
-  ) => ValidatePartialEither' 'First 'Second (a :+: b) sub where
-  validatePartialEither' _ = Form mempty
+  , Monoid (Reduce Err b)
+  ) => ValidateBranch' 'First 'Second sub (a :+: b) where
+  validateBranch' _ = Form mempty
 
--- Validate right branch when left branch only has errors
+-- | Validate right branch when left branch only has errors
 instance
   ( ValidateAll b
   , HasError a ~ 'True
   , HasError b ~ 'False
-  , Monoid (Reduce 'Err a)
-  ) => ValidatePartialEither' 'Second 'First (a :+: b) sub where
-  validatePartialEither' _ = Form mempty
+  , Monoid (Reduce Err a)
+  ) => ValidateBranch' 'Second 'First sub (a :+: b) where
+  validateBranch' _ = Form mempty
 
--- Validate right branch when left branch doesn't have errors
+-- | Validate left branch when both branches have errors
 instance
-  ( ValidatePartial b sub
-  , HasError a ~ 'False
-  , HasError b ~ 'True
-  ) => ValidatePartialEither' 'Second 'Second (a :+: b) sub where
-  validatePartialEither' (Form (_ :*: b))
-    = reform $ validatePartial @b @sub (Form b)
-
--- Validate left branch when both branches have errors
-instance
-  ( ValidatePartial a sub
-  , Monoid (Reduce 'Err b)
+  ( ValidateBranch sub a
+  , Monoid (Reduce Err b)
   , HasError a ~ 'True
   , HasError b ~ 'True
-  ) => ValidatePartialEither' 'First 'Both (a :+: b) sub where
-  validatePartialEither' (Form (a :*: _))
-    = Form $ unForm (validatePartial @a @sub (Form a)) :*: mempty
+  ) => ValidateBranch' 'First 'Both sub (a :+: b) where
+  validateBranch' (Form (a :*: _))
+    = Form $ unForm (validateBranch @sub @a (Form a)) :*: mempty
 
--- Validate right branch when both branches have errors
+-- | Validate right branch when both branches have errors
 instance
-  ( ValidatePartial b sub
-  , Monoid (Reduce 'Err a)
+  ( ValidateBranch sub b
+  , Monoid (Reduce Err a)
   , HasError a ~ 'True
   , HasError b ~ 'True
-  ) => ValidatePartialEither' 'Second 'Both (a :+: b) sub where
-  validatePartialEither' (Form (_ :*: b))
-    = Form $ mempty :*: unForm (validatePartial @b @sub (Form b))
+  ) => ValidateBranch' 'Second 'Both sub (a :+: b) where
+  validateBranch' (Form (_ :*: b))
+    = Form $ mempty :*: unForm (validateBranch @sub @b (Form b))
 
 -- Custom type errors ----------------------------------------------------------
 
 #ifndef NO_FANCY_ERRORS
 
 -- | Catch all to show nicer errors
-instance {-# OVERLAPS #-} ValidatePartialError form sub
-  => ValidatePartial' err form sub where
-    validatePartial' = error "unreachable"
-
--- | Catch all to show nicer errors
-instance {-# OVERLAPS #-} ValidatePartialError form sub
-  => ValidatePartialEither' next err form sub where
-    validatePartialEither' = error "unreachable"
+instance {-# OVERLAPS #-} ValidatePartialError sub form
+  => ValidateBranch' next err sub form where
+    validateBranch' = error "unreachable"
 
 #endif
 
 -- | Wrapper for 'ValidatePartialError''
-type ValidatePartialError form sub
-  = ValidatePartialError' form sub (HasSub form sub) (HasError form)
+type ValidatePartialError sub form
+  = ValidatePartialError' sub form (HasSub form sub) (HasError form)
 
 -- | Nice error messages for misusing partial validation, the right hand sides
 -- should always be some 'TypeError'.
-type family ValidatePartialError' (form :: QuickForm) (sub :: QuickForm) (exists :: Bool) (hasError :: Bool)
-    :: Constraint where
+type family ValidatePartialError' (sub :: QuickForm) (form :: QuickForm)
+                                  (exists :: Bool) (hasError :: Bool)
+                                  :: Constraint where
 
-  ValidatePartialError' form sub 'False e = TypeError
+  ValidatePartialError' sub form 'False e = TypeError
     ('Text "Attempted partial validation of sub"
     :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"
     :$$: 'Text "But the sub does not exist in the form"
     :$$: 'Text "  ‘" :<>: 'ShowType form :<>: 'Text "’")
 
-  ValidatePartialError' form sub 'True 'False = TypeError
+  ValidatePartialError' sub form 'True 'False = TypeError
     ('Text "Attempted partial validation of sub"
     :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"
     :$$: 'Text "But the form it exists in is always valid"
     :$$: 'Text "  ‘" :<>: 'ShowType form :<>: 'Text "’")
 
-  ValidatePartialError' form sub 'True 'True = TypeError
+  ValidatePartialError' sub form 'True 'True = TypeError
     ('Text "This should not happen: please report this bug!"
     :$$: 'Text "Attempted partial validation of sub"
     :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"

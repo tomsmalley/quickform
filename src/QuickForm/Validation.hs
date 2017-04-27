@@ -34,7 +34,7 @@ instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
 type family ValidationType (form :: QuickForm) where
   ValidationType (Unvalidated a b) = Form 'Hs b -> a
   ValidationType (Validated e a b) = Form 'Hs b -> Validate e a
-  ValidationType (Named n ('EnumField a)) = Text -> Validate EnumError a
+  ValidationType (Field n ('EnumField a)) = Text -> Validate EnumError a
 
 -- Any FormSet can be validated
 class Validation (f :: QuickForm) where
@@ -61,14 +61,14 @@ class FindError f ~ errorLocation
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (Named n 'TextField) where
+instance ValidateAll' 'Neither (Field n 'TextField) where
   validateAll' = reform
 
-instance ValidateAll' 'Neither (Named n 'HiddenField) where
+instance ValidateAll' 'Neither (Field n 'HiddenField) where
   validateAll' = reform
 
 -- | Base enum
-instance Read a => ValidateAll' 'Neither (Named n ('EnumField a)) where
+instance Read a => ValidateAll' 'Neither (Field n ('EnumField a)) where
     validateAll' (Form t) = case readMaybe $ unpack t of
       Nothing -> Left $ Form $ Just $ S.singleton EnumReadFailed
       Just a  -> Right $ Form a
@@ -98,7 +98,7 @@ instance
   ( ValidateAll b, HasError b ~ 'True
   , Validation form
   , form ~ (Validated e a b)
-  , EmptySetErrors (ReduceErr b)
+  , EmptySetErrors (Reduce Err b)
   , Ord e
   ) => ValidateAll' 'Both (Validated e a b) where
     validateAll' (Form b)
@@ -123,8 +123,8 @@ instance
 instance
   ( ValidateAll a, HasError a ~ 'True
   , ValidateAll b, HasError b ~ 'True
-  , EmptySetErrors (ReduceErr a)
-  , EmptySetErrors (ReduceErr b)
+  , EmptySetErrors (Reduce Err a)
+  , EmptySetErrors (Reduce Err b)
   ) => ValidateAll' 'Both (a :+: b) where
     validateAll' (Form (a :*: b))
       = case (validateAll @a (Form a), validateAll @b (Form b)) of
