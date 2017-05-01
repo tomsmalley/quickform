@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP, AllowAmbiguousTypes, TypeFamilies, UndecidableInstances #-}
 {-# OPTIONS_HADDOCK hide #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | This module encapsulates branch-wise validation of forms (i.e. only
 -- validating the relevant fields).
@@ -144,20 +143,20 @@ type family ValidatePartialError' (sub :: QuickForm) (form :: QuickForm)
 
   ValidatePartialError' sub form 'False e = TypeError
     ('Text "Attempted partial validation of sub"
-    :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"
-    :$$: 'Text "But the sub does not exist in the form"
-    :$$: 'Text "  ‘" :<>: 'ShowType form :<>: 'Text "’")
+    ':$$: 'Text "  ‘" ':<>: 'ShowType sub ':<>: 'Text "’"
+    ':$$: 'Text "But the sub does not exist in the form"
+    ':$$: 'Text "  ‘" ':<>: 'ShowType form ':<>: 'Text "’")
 
   ValidatePartialError' sub form 'True 'False = TypeError
     ('Text "Attempted partial validation of sub"
-    :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"
-    :$$: 'Text "But the form it exists in is always valid"
-    :$$: 'Text "  ‘" :<>: 'ShowType form :<>: 'Text "’")
+    ':$$: 'Text "  ‘" ':<>: 'ShowType sub ':<>: 'Text "’"
+    ':$$: 'Text "But the form it exists in is always valid"
+    ':$$: 'Text "  ‘" ':<>: 'ShowType form ':<>: 'Text "’")
 
   ValidatePartialError' sub form 'True 'True = TypeError
     ('Text "This should not happen: please report this bug!"
-    :$$: 'Text "Attempted partial validation of sub"
-    :$$: 'Text "  ‘" :<>: 'ShowType sub :<>: 'Text "’"
-    :$$: 'Text "It exists in the form"
-    :$$: 'Text "  ‘" :<>: 'ShowType form :<>: 'Text "’")
+    ':$$: 'Text "Attempted partial validation of sub"
+    ':$$: 'Text "  ‘" ':<>: 'ShowType sub ':<>: 'Text "’"
+    ':$$: 'Text "It exists in the form"
+    ':$$: 'Text "  ‘" ':<>: 'ShowType form ':<>: 'Text "’")
 
