@@ -4,15 +4,12 @@
 
 module QuickForm.Lens where
 
+import Control.Lens
 import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Kind
 
 import QuickForm.Form
 import QuickForm.TypeLevel
-
--- These are here to remove dependency on lens
-type Lens' s a = Lens s s a a
-type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
 -- | Generic lens to some sub form @s@ in form @f@ of 'Reduced' type @r@.
 -- The form is returned unpacked (i.e. not in 'Form') for convenience (no need
@@ -23,6 +20,10 @@ subform :: forall s f r. (FormLens s f r)
       => Lens' (Form r f) (Reduce r s)
 subform = subform' @s @f @r @(ChooseLens s f r)
 {-# INLINE subform #-}
+
+(??~) :: ASetter s t a (Checked b) -> b -> s -> t
+l ??~ b = set l (Checked b)
+{-# INLINE (??~) #-}
 
 -- Choosing a lens implementation  ---------------------------------------------
 

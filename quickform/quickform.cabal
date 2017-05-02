@@ -1,5 +1,5 @@
 name:                quickform
-version:             0.1.0.0
+version:             0.1.0
 license:             BSD3
 license-file:        LICENSE
 author:              Tom Smalley
@@ -33,6 +33,7 @@ library
                      , aeson
                      , containers
                      , deepseq
+                     , lens
                      , text
 
   default-extensions:  ConstraintKinds

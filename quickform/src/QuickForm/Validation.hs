@@ -14,8 +14,8 @@ import QuickForm.TypeLevel
 -- | Like monoid's mempty, but produces Just mempty instead of Nothing
 class EmptySetErrors a where
   emptySetErrors :: a
-instance Monoid a => EmptySetErrors (Maybe a) where
-  emptySetErrors = Just mempty
+instance Monoid a => EmptySetErrors (Checked a) where
+  emptySetErrors = Checked mempty
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a, b) where
   emptySetErrors = (emptySetErrors, emptySetErrors)
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
@@ -51,16 +51,13 @@ class FindError f ~ errorLocation
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (Field n TextField) where
-  validateAll' = reform
-
-instance ValidateAll' 'Neither (Field n HiddenField) where
+instance ValidateAll' 'Neither (Field n (InputField t)) where
   validateAll' = reform
 
 -- | Base enum
 instance Read a => ValidateAll' 'Neither (Field n (EnumField a)) where
     validateAll' (Form t) = case readMaybe $ unpack t of
-      Nothing -> Left $ Form $ Just $ S.singleton EnumReadFailed
+      Nothing -> Left $ Form $ Checked $ S.singleton EnumReadFailed
       Just a  -> Right $ Form a
 
 -- Unvalidated parent with sub validation
@@ -89,13 +86,12 @@ instance
   , Validation form
   , form ~ (Validated e a b)
   , EmptySetErrors (Reduce Err b)
-  , Ord e
   ) => ValidateAll' 'Both (Validated e a b) where
     validateAll' (Form b)
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form (mempty, err)
         Right form -> case validate @form form of
-          Left err -> Left $ Form (Just err, emptySetErrors)
+          Left err -> Left $ Form (Checked err, emptySetErrors)
           Right v' -> Right $ Form v'
 
 -- Validated parent without sub validation
@@ -106,7 +102,7 @@ instance
   ) => ValidateAll' 'First (Validated e a b) where
     validateAll' (Form b)
       = case validate @form $ validateAll @b (Form b) of
-          Left err -> Left $ Form $ Just err
+          Left err -> Left $ Form $ Checked err
           Right v' -> Right $ Form v'
 
 -- Pair type where both sides have validation

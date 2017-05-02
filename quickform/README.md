@@ -4,6 +4,11 @@
 * Concise, modular definitions
 * Full and partial validation
 
+ ## TODO
+
+ * Front end in react-hs
+ * Enum fields to control sub forms
+
  ## Example
 
 This example is a literate haskell file, so let's start with the language
@@ -61,8 +66,8 @@ Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
-> type EnterPasswordField = Field "password" TextField
-> type RepeatPasswordField = Field "password-repeat" TextField
+> type EnterPasswordField = Field "password" (InputField PasswordInput)
+> type RepeatPasswordField = Field "password-repeat" (InputField PasswordInput)
 
 ```
 
@@ -86,7 +91,7 @@ unvalidated forms just convert to it with no potential for failure.
 
 ```haskell
 
-> type FilmField = Unvalidated Film (Field "film" TextField)
+> type FilmField = Unvalidated Film (Field "film" (InputField TextInput))
 
 ```
 
@@ -108,7 +113,8 @@ representing failure and the right hand side representing success.
 
 ```haskell
 
-> type EmailField = Validated EmailError Email (Field "email" TextField)
+> type EmailField = Validated EmailError Email
+>                   (Field "email" (InputField TextInput))
 
 ```
 
@@ -167,8 +173,8 @@ unForm (Form undefined :: Form Raw UserForm)
 
 ghci> :t unForm (Form undefined :: Form Err UserForm)
 unForm (Form undefined :: Form Err UserForm)
-  :: Maybe (S.Set EmailError)
-     :*: (Maybe (S.Set PasswordError) :*: Maybe (S.Set EnumError))
+  :: Checked (S.Set EmailError)
+     :*: (Checked (S.Set PasswordError) :*: Checked (S.Set EnumError))
 
 ghci> :t unForm (Form undefined :: Form Hs UserForm)
 unForm (Form undefined :: Form Hs UserForm)
@@ -427,12 +433,13 @@ this does not validate the entire form, we always return an error form. This
 function can't be called by forms with no fields that can fail.
 
 You might have noticed that in the earlier error form example, each of the error
-sets was wrapped in `Maybe`. This seems rather pointless on the surface, since
-we can encode the lack of errors with an empty set. In actuality, we can use
-`Nothing` to represent "not checked" and `Just mempty` to represent "passed
-validation". This is important when it comes to combining error form structures
-on the front end, to prevent error messages being wrongly cleared or sticking
-around when they should be deleted.
+sets was wrapped in `Checked`. This is isomorphic to `Maybe`, but with a
+different Monoid instance which prefers the right hand side. This seems rather
+pointless on the surface, since we can encode the lack of errors with an empty
+set. In actuality, we can use `Unchecked` to represent "not checked" and
+`Checked mempty` to represent "passed validation". This is important when it
+comes to combining error form structures on the front end, to prevent error
+messages being wrongly cleared or sticking around when they should be deleted.
 
 ```haskell
 
@@ -444,17 +451,17 @@ around when they should be deleted.
 ```
 ```
 ghci> vemail
-Form (Just (fromList []) :+: Nothing :+: Nothing)
+Form (Checked (fromList []) :+: Unchecked :+: Unchecked)
 ghci> venterp
-Form (Nothing :+: Just (fromList [TooShort,Unmatching]) :+: Nothing)
+Form (Unchecked :+: Checked (fromList [TooShort,Unmatching]) :+: Unchecked)
 ghci> vcolour
-Form (Nothing :+: Nothing :+: Just (fromList [EnumReadFailed]))
+Form (Unchecked :+: Unchecked :+: Checked (fromList [EnumReadFailed]))
 ghci> vfilm
-Form (Nothing :+: Nothing :+: Nothing)
+Form (Unchecked :+: Unchecked :+: Unchecked)
 ```
 
-Notice that the `Just` fields are the ones we asked it to validate, and the
-unrelated `Nothing` fields are untouched.
+Notice that the `Checked` fields are the ones we asked it to validate, and the
+unrelated `Unchecked` fields are untouched.
 
  ### Other notes
 

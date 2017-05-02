@@ -35,16 +35,22 @@ module QuickForm
 
   -- ** Field types
   , FieldType
-  , TextField
-  , HiddenField
+  , InputField
   , EnumField
   , EnumError (..)
+
+  , InputType
+  , TextInput
+  , EmailInput
+  , PasswordInput
+  , HiddenInput
 
   -- * Term level
 
   -- ** Form types
   , Form (Form, unForm)
   , reform
+  , Checked (..)
 
   -- ** Reduced types
   , Reduced
@@ -70,6 +76,7 @@ module QuickForm
 
   -- * Lenses
   , subform
+  , (??~)
 
   ) where
 

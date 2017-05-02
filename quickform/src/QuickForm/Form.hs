@@ -1,4 +1,5 @@
-{-# LANGUAGE DeriveGeneric, TypeFamilies, UndecidableInstances #-}
+{-# LANGUAGE DeriveFunctor, DeriveGeneric, TypeFamilies
+           , UndecidableInstances #-}
 
 -- | Form wrapper
 module QuickForm.Form where
@@ -68,6 +69,21 @@ instance (Monoid a, Monoid b) => Monoid (a :*: b) where
   mempty = mempty :+: mempty
   mappend (a :+: b) (a' :+: b') = (a <> a') :+: (b <> b')
 
+-- Checked type ----------------------------------------------------------------
+
+-- | Like 'Maybe' but with a different monoid instance
+data Checked a = Unchecked | Checked a
+  deriving (Eq, Functor, Generic, Read, Show)
+
+instance ToJSON a => ToJSON (Checked a)
+instance FromJSON a => FromJSON (Checked a)
+instance NFData a => NFData (Checked a)
+
+instance Monoid (Checked a) where
+  mempty = Unchecked
+  mappend _ (Checked a) = Checked a
+  mappend a _ = a
+
 -- Type functions --------------------------------------------------------------
 
 -- | Encodes how a 'QuickForm' is reduced by the type family 'Reduce'. Promoted
@@ -96,14 +112,12 @@ type family Reduce (r :: Reduced) (f :: QuickForm) :: Type where
 
 -- | Get the raw type of an element
 type family RawType (form :: FieldType) :: Type where
-  RawType TextField = Text
-  RawType HiddenField = Text
+  RawType (InputField _) = Text
   RawType (EnumField _) = Text
 
 -- | Get the shallowest output type of an element
 type family OutputType (form :: FieldType) :: Type where
-  OutputType TextField = Text
-  OutputType HiddenField = Text
+  OutputType (InputField _) = Text
   OutputType (EnumField o) = o
 
 -- | Ensure use of the correct type function
@@ -113,11 +127,11 @@ type ReduceError a = ReduceError' (FindError a) a
 -- shows which "side" the next errors are on so that we can cut out irrelevant
 -- parts.
 type family ReduceError' (w :: WhichSide) (f :: QuickForm) :: Type where
-  ReduceError' 'First (Validated e _ _) = Maybe (Set e)
-  ReduceError' 'Both (Validated e _ b) = (Maybe (Set e), ReduceError b)
+  ReduceError' 'First (Validated e _ _) = Checked (Set e)
+  ReduceError' 'Both (Validated e _ b) = (Checked (Set e), ReduceError b)
   ReduceError' 'Second (Unvalidated _ b) = ReduceError b
   ReduceError' 'First (a :+: b) = ReduceError a
   ReduceError' 'Second (a :+: b) = ReduceError b
   ReduceError' 'Both (a :+: b) = ReduceError a :*: ReduceError b
-  ReduceError' w (Field _ (EnumField _)) = Maybe (Set EnumError)
+  ReduceError' w (Field _ (EnumField _)) = Checked (Set EnumError)
 

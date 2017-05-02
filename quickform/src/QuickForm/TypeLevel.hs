@@ -7,11 +7,18 @@ module QuickForm.TypeLevel
   , Validated
   , Field
   , (:+:)
+
   , FieldType
-  , TextField
-  , HiddenField
+  , InputField
   , EnumField
   , EnumError (..)
+
+  , InputType
+  , TextInput
+  , EmailInput
+  , HiddenInput
+  , PasswordInput
+
   , WhichSide (..)
   , FindError
   , HasError
@@ -27,8 +34,8 @@ import Data.Kind
 -- | This is promoted to a kind, and forms the basis of the library. See
 -- below for explanations of the constructors.
 data QuickForm
-  = Unvalidated Type QuickForm
-  | Validated Type Type QuickForm
+  = forall a. Unvalidated a QuickForm
+  | forall e a. Validated e a QuickForm
   | Field Symbol FieldType
   | (:+:) QuickForm QuickForm
 
@@ -49,14 +56,11 @@ infixr 9 :+:
 
 -- | Field types, promoted to a kind. See below for the constructors.
 data FieldType
-  = TextField
-  | HiddenField
-  | EnumField Type
+  = InputField InputType
+  | forall a. EnumField a
 
--- | Text fields
-type TextField = 'TextField
--- | Hidden fields
-type HiddenField = 'HiddenField
+-- | Input fields
+type InputField a = 'InputField a
 -- | Enum fields (e.g. dropdown or radio)
 type EnumField a = 'EnumField a
 
@@ -67,7 +71,23 @@ data EnumError = EnumReadFailed
 instance ToJSON EnumError
 instance FromJSON EnumError
 
--- | Type functions
+-- | Input field types, promoted to a kind. See below for constructors.
+data InputType
+  = TextInput
+  | EmailInput
+  | PasswordInput
+  | HiddenInput
+
+-- | Text fields
+type TextInput = 'TextInput
+-- | Email fields
+type EmailInput = 'EmailInput
+-- | Hidden fields
+type HiddenInput = 'HiddenInput
+-- | Password fields
+type PasswordInput = 'PasswordInput
+
+-- Type functions --------------------------------------------------------------
 
 -- | Denotes a side of a combinator such as (a :+: b)
 data WhichSide = First | Second | Both | Neither
