@@ -14,7 +14,7 @@ import QuickForm.TypeLevel
 type Lens' s a = Lens s s a a
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
--- | Generic lens to some sub form @sub@ in form @form@ of 'Reduced' type @r@.
+-- | Generic lens to some sub form @s@ in form @f@ of 'Reduced' type @r@.
 -- The form is returned unpacked (i.e. not in 'Form') for convenience (no need
 -- to use 'unForm' with every lens). Use with TypeApplications as such:
 --

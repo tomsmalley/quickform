@@ -76,6 +76,7 @@ construction :: Spec
 construction = describe "Construction" $ do
 
     it "named text error field fails" $ do
+      False `shouldBe` False
       shouldNotTypecheck (Form "test" :: Form Err N1)
     it "unvalidated form error field fails" $ do
       shouldNotTypecheck (Form "test" :: Form Err U1)
@@ -129,11 +130,11 @@ pair = describe "Pair combinator" $ do
 
   describe "Monoid instance" $ do
     it "mempty" $ do
-      mempty `shouldBe` (mempty :: [Int]) :+: (mempty :: Maybe Char)
+      mempty `shouldBe` (mempty :: [Int]) :+: (mempty :: Maybe String)
     it "left identity" $ do
-      property $ \a b -> mempty <> (a :+: b) == (a :: [Int]) :+: (b :: Maybe Char)
+      property $ \a b -> mempty <> (a :+: b) == (a :: [Int]) :+: (b :: Maybe String)
     it "right identity" $ do
-      property $ \a b -> (a :+: b) <> mempty == (a :: [Int]) :+: (b :: Maybe Char)
+      property $ \a b -> (a :+: b) <> mempty == (a :: [Int]) :+: (b :: Maybe String)
     it "associativity" $ do
       property $ \a a' b b' c c'
         -> a :+: a' <> (b :+: b' <> c :+: c')
