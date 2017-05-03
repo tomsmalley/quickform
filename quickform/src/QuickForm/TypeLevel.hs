@@ -19,11 +19,17 @@ module QuickForm.TypeLevel
   , HiddenInput
   , PasswordInput
 
+  , HasLabel
+  , Label
+  , NoLabel
+
   , WhichSide (..)
   , FindError
   , HasError
   , FindSub
   , HasSub
+  , InputTypeSymbol
+  , LabelSymbol
   ) where
 
 import Data.Aeson
@@ -36,7 +42,7 @@ import Data.Kind
 data QuickForm
   = forall a. Unvalidated a QuickForm
   | forall e a. Validated e a QuickForm
-  | Field Symbol FieldType
+  | Field HasLabel Symbol FieldType
   | (:+:) QuickForm QuickForm
 
 -- | Convert the sub form @b@ :: 'QuickForm' to type @a@.
@@ -87,6 +93,13 @@ type HiddenInput = 'HiddenInput
 -- | Password fields
 type PasswordInput = 'PasswordInput
 
+data HasLabel
+  = NoLabel
+  | Label Symbol
+
+type NoLabel = 'NoLabel
+type Label n = 'Label n
+
 -- Type functions --------------------------------------------------------------
 
 -- | Denotes a side of a combinator such as (a :+: b)
@@ -128,9 +141,19 @@ type family FindError (form :: QuickForm) :: WhichSide where
 
 -- | Find if a given form has validated forms somewhere inside it
 type family HasError (form :: QuickForm) :: Bool where
-  HasError (Field _ ('EnumField _)) = 'True
-  HasError (Field _ _) = 'False
+  HasError (Field _ _ ('EnumField _)) = 'True
+  HasError (Field _ _ _) = 'False
   HasError (Validated _ _ _) = 'True
   HasError (Unvalidated _ b) = HasError b
   HasError (a :+: b) = HasError a `Or` HasError b
+
+type family InputTypeSymbol (t :: InputType) :: Symbol where
+  InputTypeSymbol TextInput = "text"
+  InputTypeSymbol HiddenInput = "hidden"
+  InputTypeSymbol EmailInput = "email"
+  InputTypeSymbol PasswordInput = "password"
+
+type family LabelSymbol (l :: HasLabel) :: Symbol where
+  LabelSymbol (Label l) = l
+  LabelSymbol NoLabel = ""
 

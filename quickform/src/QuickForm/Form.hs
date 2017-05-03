@@ -69,20 +69,24 @@ instance (Monoid a, Monoid b) => Monoid (a :*: b) where
   mempty = mempty :+: mempty
   mappend (a :+: b) (a' :+: b') = (a <> a') :+: (b <> b')
 
--- Checked type ----------------------------------------------------------------
+-- Touched type ----------------------------------------------------------------
 
 -- | Like 'Maybe' but with a different monoid instance
-data Checked a = Unchecked | Checked a
+data Touched a = Untouched | Touched a
   deriving (Eq, Functor, Generic, Read, Show)
 
-instance ToJSON a => ToJSON (Checked a)
-instance FromJSON a => FromJSON (Checked a)
-instance NFData a => NFData (Checked a)
+instance ToJSON a => ToJSON (Touched a)
+instance FromJSON a => FromJSON (Touched a)
+instance NFData a => NFData (Touched a)
 
-instance Monoid (Checked a) where
-  mempty = Unchecked
-  mappend _ (Checked a) = Checked a
+instance Monoid (Touched a) where
+  mempty = Untouched
+  mappend _ (Touched a) = Touched a
   mappend a _ = a
+
+fromTouched :: a -> Touched a -> a
+fromTouched a Untouched = a
+fromTouched _ (Touched a) = a
 
 -- Type functions --------------------------------------------------------------
 
@@ -107,8 +111,8 @@ type family Reduce (r :: Reduced) (f :: QuickForm) :: Type where
   Reduce Hs (Validated _ a _) = a
   Reduce Hs (Unvalidated a _) = a
   Reduce r (a :+: b) = Reduce r a :*: Reduce r b
-  Reduce Raw (Field _ f) = RawType f
-  Reduce Hs (Field _ f) = OutputType f
+  Reduce Raw (Field _ _ f) = Touched (RawType f)
+  Reduce Hs (Field _ _ f) = OutputType f
 
 -- | Get the raw type of an element
 type family RawType (form :: FieldType) :: Type where
@@ -127,11 +131,11 @@ type ReduceError a = ReduceError' (FindError a) a
 -- shows which "side" the next errors are on so that we can cut out irrelevant
 -- parts.
 type family ReduceError' (w :: WhichSide) (f :: QuickForm) :: Type where
-  ReduceError' 'First (Validated e _ _) = Checked (Set e)
-  ReduceError' 'Both (Validated e _ b) = (Checked (Set e), ReduceError b)
+  ReduceError' 'First (Validated e _ _) = Touched (Set e)
+  ReduceError' 'Both (Validated e _ b) = (Touched (Set e), ReduceError b)
   ReduceError' 'Second (Unvalidated _ b) = ReduceError b
   ReduceError' 'First (a :+: b) = ReduceError a
   ReduceError' 'Second (a :+: b) = ReduceError b
   ReduceError' 'Both (a :+: b) = ReduceError a :*: ReduceError b
-  ReduceError' w (Field _ (EnumField _)) = Checked (Set EnumError)
+  ReduceError' w (Field _ _ (EnumField _)) = Touched (Set EnumError)
 

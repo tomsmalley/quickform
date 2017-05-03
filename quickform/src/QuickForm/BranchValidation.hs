@@ -36,6 +36,20 @@ class ValidateBranch' (findSub :: WhichSide) (findError :: WhichSide)
                       (sub :: QuickForm) (form :: QuickForm) where
   validateBranch' :: Form Raw form -> Form Err form
 
+-- | Determine if all raw fields have been touched by the user
+class AllTouched (form :: QuickForm) where
+  allTouched :: Form Raw form -> Bool
+
+instance (AllTouched a, AllTouched b) => AllTouched (a :+: b) where
+  allTouched (Form (a :+: b)) = allTouched @a (Form a) && allTouched @b (Form b)
+instance AllTouched b => AllTouched (Unvalidated a b) where
+  allTouched = allTouched @b . reform
+instance AllTouched b => AllTouched (Validated e a b) where
+  allTouched = allTouched @b . reform
+instance AllTouched (Field l n t) where
+  allTouched (Form Untouched) = False
+  allTouched (Form (Touched _)) = True
+
 -- Instances -------------------------------------------------------------------
 
 -- | Found the sub in the form, just validate it all
@@ -46,16 +60,37 @@ instance
   ) => ValidateBranch' findSub r a a where
     validateBranch' = either id (const $ Form emptySetErrors) . validateAll @a
 
--- | Validated parents require full validation
+-- | Validated parents with validated sub forms
 instance {-# INCOHERENT #-}
   ( ValidateAll form
   , EmptySetErrors (Reduce Err form)
   , form ~ (Validated e a b)
-  ) => ValidateBranch' findSub err sub (Validated e a b) where
-    validateBranch'
-      = either id (const $ Form emptySetErrors) . validateAll
+  , ValidateBranch sub b
+  , HasError b ~ 'True
+  , AllTouched b
+  ) => ValidateBranch' findSub 'Both sub (Validated e a b) where
+    validateBranch' raw
+      = case validateAll raw of
+          Right _ -> Form emptySetErrors
+          Left (Form e) ->
+            if allTouched raw then Form e
+            else Form $ (mempty, unForm $ validateBranch @sub @b $ reform raw)
 
--- | Unnamed unvalidated parents just partially validate the relavant sub form
+-- | Validated parents with unvalidated sub forms
+instance {-# INCOHERENT #-}
+  ( ValidateAll form
+  , EmptySetErrors (Reduce Err form)
+  , Monoid (Reduce Err form)
+  , form ~ (Validated e a b)
+  , HasError b ~ 'False
+  , AllTouched b
+  ) => ValidateBranch' findSub 'First sub (Validated e a b) where
+    validateBranch' raw
+      = case validateAll raw of
+        Right _ -> Form emptySetErrors
+        Left (Form e) -> if allTouched raw then Form e else Form mempty
+
+-- | Unnamed unvalidated parents just partially validate the relevant sub form
 instance {-# INCOHERENT #-}
   ( ValidateBranch sub b
   , HasError b ~ 'True

@@ -21,8 +21,8 @@ subform :: forall s f r. (FormLens s f r)
 subform = subform' @s @f @r @(ChooseLens s f r)
 {-# INLINE subform #-}
 
-(??~) :: ASetter s t a (Checked b) -> b -> s -> t
-l ??~ b = set l (Checked b)
+(??~) :: ASetter s t a (Touched b) -> b -> s -> t
+l ??~ b = set l (Touched b)
 {-# INLINE (??~) #-}
 
 -- Choosing a lens implementation  ---------------------------------------------

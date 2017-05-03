@@ -45,12 +45,16 @@ module QuickForm
   , PasswordInput
   , HiddenInput
 
+  , HasLabel
+  , Label
+  , NoLabel
+
   -- * Term level
 
   -- ** Form types
   , Form (Form, unForm)
   , reform
-  , Checked (..)
+  , Touched (..)
 
   -- ** Reduced types
   , Reduced

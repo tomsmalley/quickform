@@ -5,6 +5,7 @@ module QuickForm.Validation where
 
 import Text.Read (readMaybe)
 import Data.Text (Text, unpack)
+import qualified Data.Text as T
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -14,8 +15,8 @@ import QuickForm.TypeLevel
 -- | Like monoid's mempty, but produces Just mempty instead of Nothing
 class EmptySetErrors a where
   emptySetErrors :: a
-instance Monoid a => EmptySetErrors (Checked a) where
-  emptySetErrors = Checked mempty
+instance Monoid a => EmptySetErrors (Touched a) where
+  emptySetErrors = Touched mempty
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a, b) where
   emptySetErrors = (emptySetErrors, emptySetErrors)
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
@@ -24,7 +25,7 @@ instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
 type family ValidationType (form :: QuickForm) where
   ValidationType (Unvalidated a b) = Form 'Hs b -> a
   ValidationType (Validated e a b) = Form 'Hs b -> Either (Set e) a
-  ValidationType (Field n (EnumField a)) = Text -> Either (Set EnumError) a
+  ValidationType (Field _ _ (EnumField a)) = Text -> Either (Set EnumError) a
 
 -- Any FormSet can be validated
 class Validation (f :: QuickForm) where
@@ -51,14 +52,14 @@ class FindError f ~ errorLocation
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (Field n (InputField t)) where
-  validateAll' = reform
+instance ValidateAll' 'Neither (Field l n (InputField t)) where
+  validateAll' = Form . fromTouched T.empty . unForm
 
 -- | Base enum
-instance Read a => ValidateAll' 'Neither (Field n (EnumField a)) where
-    validateAll' (Form t) = case readMaybe $ unpack t of
-      Nothing -> Left $ Form $ Checked $ S.singleton EnumReadFailed
-      Just a  -> Right $ Form a
+instance Read a => ValidateAll' 'Neither (Field l n (EnumField a)) where
+  validateAll' (Form t) = case readMaybe $ unpack $ fromTouched T.empty t of
+    Nothing -> Left $ Form $ Touched $ S.singleton EnumReadFailed
+    Just a  -> Right $ Form a
 
 -- Unvalidated parent with sub validation
 instance
@@ -91,7 +92,7 @@ instance
       = case validateAll @b (Form b) of
         Left (Form err) -> Left $ Form (mempty, err)
         Right form -> case validate @form form of
-          Left err -> Left $ Form (Checked err, emptySetErrors)
+          Left err -> Left $ Form (Touched err, emptySetErrors)
           Right v' -> Right $ Form v'
 
 -- Validated parent without sub validation
@@ -102,7 +103,7 @@ instance
   ) => ValidateAll' 'First (Validated e a b) where
     validateAll' (Form b)
       = case validate @form $ validateAll @b (Form b) of
-          Left err -> Left $ Form $ Checked err
+          Left err -> Left $ Form $ Touched err
           Right v' -> Right $ Form v'
 
 -- Pair type where both sides have validation

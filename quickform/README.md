@@ -6,8 +6,8 @@
 
  ## TODO
 
- * Front end in react-hs
- * Enum fields to control sub forms
+* Front end in react-hs
+* Enum fields to control sub forms
 
  ## Example
 
@@ -55,19 +55,23 @@ us, all of which have kind `QuickForm`, made available by DataKinds. This ensure
 you can only construct logically valid form structures.
 
 First, you need to know about `Field`. These are the most basic form
-elements, and just represent concrete HTML fields. `Field` takes two type
-parameters, the first of kind `Symbol` (which is a type level string), and the
-second of kind `FieldType`. The `Symbol` is used as the field's HTML `name`. The
-`FieldType` denotes the element used to display it, governing how values are
-marshalled to haskell types: for example, `<input>` elements can be thought of
-as storing `Text` values.
+elements, and just represent concrete HTML fields. `Field` takes three type
+parameters, the first of kind `HasLabel`, the
+second of kind `Symbol` (which is a type level string), and the
+second of kind `FieldType`. The `HasLabel` can be `NoLabel` or `Label Symbol`
+and denotes the label to be used for the field. The `Symbol` is used as the
+field's HTML `name`. The `FieldType` denotes the element used to display it,
+governing how values are marshalled to haskell types: for example, `<input>`
+elements can be thought of as storing `Text` values.
 
 Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
-> type EnterPasswordField = Field "password" (InputField PasswordInput)
-> type RepeatPasswordField = Field "password-repeat" (InputField PasswordInput)
+> type EnterPasswordField
+>   = Field (Label "Password") "password" (InputField PasswordInput)
+> type RepeatPasswordField
+>   = Field (Label "Repeat password") "password-repeat" (InputField PasswordInput)
 
 ```
 
@@ -77,7 +81,7 @@ the type we want to use to provide the field data and get back after validation.
 
 ```haskell
 
-> type ColourField = Field "colour" (EnumField Colour)
+> type ColourField = Field (Label "Colour") "colour" (EnumField Colour)
 
 ```
 
@@ -91,7 +95,8 @@ unvalidated forms just convert to it with no potential for failure.
 
 ```haskell
 
-> type FilmField = Unvalidated Film (Field "film" (InputField TextInput))
+> type FilmField = Unvalidated Film
+>         (Field (Label "Film") "film" (InputField TextInput))
 
 ```
 
@@ -114,7 +119,7 @@ representing failure and the right hand side representing success.
 ```haskell
 
 > type EmailField = Validated EmailError Email
->                   (Field "email" (InputField TextInput))
+>          (Field (Label "Email address") "email" (InputField EmailInput))
 
 ```
 
@@ -173,8 +178,8 @@ unForm (Form undefined :: Form Raw UserForm)
 
 ghci> :t unForm (Form undefined :: Form Err UserForm)
 unForm (Form undefined :: Form Err UserForm)
-  :: Checked (S.Set EmailError)
-     :*: (Checked (S.Set PasswordError) :*: Checked (S.Set EnumError))
+  :: Touched (S.Set EmailError)
+     :*: (Touched (S.Set PasswordError) :*: Touched (S.Set EnumError))
 
 ghci> :t unForm (Form undefined :: Form Hs UserForm)
 unForm (Form undefined :: Form Hs UserForm)
@@ -267,10 +272,10 @@ entry for `UserForm`.
 ```haskell
 
 > dog :: Form Raw UserForm
-> dog = Form $ "dave@dog.com"
->          :+: ("woof" :+: "woof2")
->          :+: "Bone"
->          :+: "Beethoven"
+> dog = Form $ Touched "dave@dog.com"
+>          :+: (Touched "woof" :+: Touched "woof2")
+>          :+: Touched "Bone"
+>          :+: Touched "Beethoven"
 
 ```
 
@@ -397,10 +402,10 @@ passes the rules:
 ```haskell
 
 > monkey :: Form Raw UserForm
-> monkey = Form $ "matt@monkey.com"
->             :+: ("ilikebananas" :+: "ilikebananas")
->             :+: "Yellow"
->             :+: "Planet of the Apes"
+> monkey = Form $ Touched "matt@monkey.com"
+>             :+: (Touched "ilikebananas" :+: Touched "ilikebananas")
+>             :+: Touched "Yellow"
+>             :+: Touched "Planet of the Apes"
 
 ```
 ```
@@ -433,11 +438,11 @@ this does not validate the entire form, we always return an error form. This
 function can't be called by forms with no fields that can fail.
 
 You might have noticed that in the earlier error form example, each of the error
-sets was wrapped in `Checked`. This is isomorphic to `Maybe`, but with a
+sets was wrapped in `Touched`. This is isomorphic to `Maybe`, but with a
 different Monoid instance which prefers the right hand side. This seems rather
 pointless on the surface, since we can encode the lack of errors with an empty
-set. In actuality, we can use `Unchecked` to represent "not checked" and
-`Checked mempty` to represent "passed validation". This is important when it
+set. In actuality, we can use `Untouched` to represent "not checked" and
+`Touched mempty` to represent "passed validation". This is important when it
 comes to combining error form structures on the front end, to prevent error
 messages being wrongly cleared or sticking around when they should be deleted.
 
@@ -451,17 +456,17 @@ messages being wrongly cleared or sticking around when they should be deleted.
 ```
 ```
 ghci> vemail
-Form (Checked (fromList []) :+: Unchecked :+: Unchecked)
+Form (Touched (fromList []) :+: Untouched :+: Untouched)
 ghci> venterp
-Form (Unchecked :+: Checked (fromList [TooShort,Unmatching]) :+: Unchecked)
+Form (Untouched :+: Touched (fromList [TooShort,Unmatching]) :+: Untouched)
 ghci> vcolour
-Form (Unchecked :+: Unchecked :+: Checked (fromList [EnumReadFailed]))
+Form (Untouched :+: Untouched :+: Touched (fromList [EnumReadFailed]))
 ghci> vfilm
-Form (Unchecked :+: Unchecked :+: Unchecked)
+Form (Untouched :+: Untouched :+: Untouched)
 ```
 
-Notice that the `Checked` fields are the ones we asked it to validate, and the
-unrelated `Unchecked` fields are untouched.
+Notice that the `Touched` fields are the ones we asked it to validate, and the
+unrelated `Untouched` fields are untouched.
 
  ### Other notes
 
