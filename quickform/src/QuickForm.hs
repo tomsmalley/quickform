@@ -38,6 +38,7 @@ module QuickForm
   , InputField
   , EnumField
   , EnumError (..)
+  , EnumShow (enumShow)
 
   , InputType
   , TextInput
@@ -66,6 +67,9 @@ module QuickForm
   , (:*:) ((:+:))
 
   -- * Validation
+
+  , anyErrors
+  , AnyErrors
 
   -- ** Validation class
   , Validation (..)

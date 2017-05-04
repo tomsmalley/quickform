@@ -12,6 +12,7 @@ module QuickForm.TypeLevel
   , InputField
   , EnumField
   , EnumError (..)
+  , EnumShow (enumShow)
 
   , InputType
   , TextInput
@@ -32,10 +33,11 @@ module QuickForm.TypeLevel
   , LabelSymbol
   ) where
 
+import Control.DeepSeq
+import Data.Text
 import Data.Aeson
 import GHC.Generics (Generic)
 import GHC.TypeLits (Symbol)
-import Data.Kind
 
 -- | This is promoted to a kind, and forms the basis of the library. See
 -- below for explanations of the constructors.
@@ -76,6 +78,10 @@ data EnumError = EnumReadFailed
   deriving (Eq, Show, Ord, Generic)
 instance ToJSON EnumError
 instance FromJSON EnumError
+instance NFData EnumError
+
+class EnumShow e where
+  enumShow :: e -> Text
 
 -- | Input field types, promoted to a kind. See below for constructors.
 data InputType

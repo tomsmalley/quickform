@@ -31,6 +31,38 @@ type family ValidationType (form :: QuickForm) where
 class Validation (f :: QuickForm) where
   validate :: ValidationType f
 
+type AnyErrors f = AnyErrors' (FindError f) f
+anyErrors :: forall f. AnyErrors f => Form Err f -> Bool
+anyErrors = anyErrors' @(FindError f)
+
+class AnyErrors' (findError :: WhichSide) (f :: QuickForm) where
+  anyErrors' :: Form Err f -> Bool
+
+instance AnyErrors' 'Neither (Field l n (EnumField t)) where
+  anyErrors' (Form e) = hasError e
+instance HasError b ~ 'False
+  => AnyErrors' 'First (Validated e a b) where
+    anyErrors' (Form e) = hasError e
+instance (AnyErrors b, HasError b ~ 'True)
+  => AnyErrors' 'Both (Validated e a b) where
+    anyErrors' (Form (e, b)) = hasError e || anyErrors @b (Form b)
+instance (AnyErrors b, HasError b ~ 'True)
+  => AnyErrors' 'Second (Unvalidated a b) where
+    anyErrors' = anyErrors @b . reform
+instance (AnyErrors a, AnyErrors b, HasError a ~ 'True, HasError b ~ 'True)
+  => AnyErrors' 'Both (a :+: b) where
+    anyErrors' (Form (a :+: b)) = anyErrors @a (Form a) || anyErrors @b (Form b)
+instance (AnyErrors a, HasError a ~ 'True, HasError b ~ 'False)
+  => AnyErrors' 'First (a :+: b) where
+    anyErrors' = anyErrors @a . reform
+instance (AnyErrors b, HasError a ~ 'False, HasError b ~ 'True)
+  => AnyErrors' 'Second (a :+: b) where
+    anyErrors' = anyErrors @b . reform
+
+hasError :: Touched (Set e) -> Bool
+hasError Untouched = False
+hasError (Touched s) = not $ S.null s
+
 -- Validation ------------------------------------------------------------------
 
 -- | For guiding GHC to the correct types
