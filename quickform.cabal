@@ -2,6 +2,9 @@ name:                quickform
 version:             0.1.0
 license:             BSD3
 license-file:        LICENSE
+synopsis:            Type level HTML forms
+description:         This library provides core utilities for describing and
+                     validating HTML forms in haskell web applications.
 author:              Tom Smalley
 maintainer:          tfsmalley@gmail.com
 category:            Web

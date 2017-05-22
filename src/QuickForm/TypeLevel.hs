@@ -12,7 +12,6 @@ module QuickForm.TypeLevel
   , InputField
   , EnumField
   , EnumError (..)
-  , EnumShow (enumShow)
 
   , InputType
   , TextInput
@@ -79,9 +78,6 @@ data EnumError = EnumReadFailed
 instance ToJSON EnumError
 instance FromJSON EnumError
 instance NFData EnumError
-
-class EnumShow e where
-  enumShow :: e -> Text
 
 -- | Input field types, promoted to a kind. See below for constructors.
 data InputType

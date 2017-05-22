@@ -38,7 +38,6 @@ module QuickForm
   , InputField
   , EnumField
   , EnumError (..)
-  , EnumShow (enumShow)
 
   , InputType
   , TextInput
