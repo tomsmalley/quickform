@@ -25,7 +25,7 @@ instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
 type family ValidationType (form :: QuickForm) where
   ValidationType (Unvalidated a b) = Form 'Hs b -> a
   ValidationType (Validated e a b) = Form 'Hs b -> Either (Set e) a
-  ValidationType (Field _ _ (EnumField a)) = Text -> Either (Set EnumError) a
+  ValidationType (Field _ (EnumField a)) = Text -> Either (Set EnumError) a
 
 -- Any FormSet can be validated
 class Validation (f :: QuickForm) where
@@ -38,7 +38,7 @@ anyErrors = anyErrors' @(FindError f)
 class AnyErrors' (findError :: WhichSide) (f :: QuickForm) where
   anyErrors' :: Form Err f -> Bool
 
-instance AnyErrors' 'Neither (Field l n (EnumField t)) where
+instance AnyErrors' 'Neither (Field n (EnumField t)) where
   anyErrors' (Form e) = hasError e
 instance HasError b ~ 'False
   => AnyErrors' 'First (Validated e a b) where
@@ -84,11 +84,11 @@ class FindError f ~ errorLocation
     validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
 
 -- Base
-instance ValidateAll' 'Neither (Field l n (InputField t)) where
+instance ValidateAll' 'Neither (Field n InputField) where
   validateAll' = Form . fromTouched T.empty . unForm
 
 -- | Base enum
-instance Read a => ValidateAll' 'Neither (Field l n (EnumField a)) where
+instance Read a => ValidateAll' 'Neither (Field n (EnumField a)) where
   validateAll' (Form t) = case readMaybe $ unpack $ fromTouched T.empty t of
     Nothing -> Left $ Form $ Touched $ S.singleton EnumReadFailed
     Just a  -> Right $ Form a

@@ -13,23 +13,11 @@ module QuickForm.TypeLevel
   , EnumField
   , EnumError (..)
 
-  , InputType
-  , TextInput
-  , EmailInput
-  , HiddenInput
-  , PasswordInput
-
-  , HasLabel
-  , Label
-  , NoLabel
-
   , WhichSide (..)
   , FindError
   , HasError
   , FindSub
   , HasSub
-  , InputTypeSymbol
-  , LabelSymbol
   ) where
 
 import Control.DeepSeq
@@ -43,7 +31,7 @@ import GHC.TypeLits (Symbol)
 data QuickForm
   = forall a. Unvalidated a QuickForm
   | forall e a. Validated e a QuickForm
-  | Field HasLabel Symbol FieldType
+  | Field Symbol FieldType
   | (:+:) QuickForm QuickForm
 
 -- | Convert the sub form @b@ :: 'QuickForm' to type @a@.
@@ -63,11 +51,11 @@ infixr 9 :+:
 
 -- | Field types, promoted to a kind. See below for the constructors.
 data FieldType
-  = InputField InputType
+  = InputField
   | forall a. EnumField a
 
--- | Input fields
-type InputField a = 'InputField a
+-- | Input fields (Text of any kind, e.g. text, email, password, hidden)
+type InputField = 'InputField
 -- | Enum fields (e.g. dropdown or radio)
 type EnumField a = 'EnumField a
 
@@ -78,29 +66,6 @@ data EnumError = EnumReadFailed
 instance ToJSON EnumError
 instance FromJSON EnumError
 instance NFData EnumError
-
--- | Input field types, promoted to a kind. See below for constructors.
-data InputType
-  = TextInput
-  | EmailInput
-  | PasswordInput
-  | HiddenInput
-
--- | Text fields
-type TextInput = 'TextInput
--- | Email fields
-type EmailInput = 'EmailInput
--- | Hidden fields
-type HiddenInput = 'HiddenInput
--- | Password fields
-type PasswordInput = 'PasswordInput
-
-data HasLabel
-  = NoLabel
-  | Label Symbol
-
-type NoLabel = 'NoLabel
-type Label n = 'Label n
 
 -- Type functions --------------------------------------------------------------
 
@@ -143,19 +108,9 @@ type family FindError (form :: QuickForm) :: WhichSide where
 
 -- | Find if a given form has validated forms somewhere inside it
 type family HasError (form :: QuickForm) :: Bool where
-  HasError (Field _ _ ('EnumField _)) = 'True
-  HasError (Field _ _ _) = 'False
+  HasError (Field _ ('EnumField _)) = 'True
+  HasError (Field _ _) = 'False
   HasError (Validated _ _ _) = 'True
   HasError (Unvalidated _ b) = HasError b
   HasError (a :+: b) = HasError a `Or` HasError b
-
-type family InputTypeSymbol (t :: InputType) :: Symbol where
-  InputTypeSymbol TextInput = "text"
-  InputTypeSymbol HiddenInput = "hidden"
-  InputTypeSymbol EmailInput = "email"
-  InputTypeSymbol PasswordInput = "password"
-
-type family LabelSymbol (l :: HasLabel) :: Symbol where
-  LabelSymbol (Label l) = l
-  LabelSymbol NoLabel = ""
 

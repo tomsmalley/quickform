@@ -46,7 +46,7 @@ instance AllTouched b => AllTouched (Unvalidated a b) where
   allTouched = allTouched @b . reform
 instance AllTouched b => AllTouched (Validated e a b) where
   allTouched = allTouched @b . reform
-instance AllTouched (Field l n t) where
+instance AllTouched (Field n t) where
   allTouched (Form Untouched) = False
   allTouched (Form (Touched _)) = True
 

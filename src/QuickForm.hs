@@ -39,16 +39,6 @@ module QuickForm
   , EnumField
   , EnumError (..)
 
-  , InputType
-  , TextInput
-  , EmailInput
-  , PasswordInput
-  , HiddenInput
-
-  , HasLabel
-  , Label
-  , NoLabel
-
   -- * Term level
 
   -- ** Form types
@@ -76,6 +66,7 @@ module QuickForm
 
   -- ** Full validation
   , validateAll
+  , ValidateAll
   , ValidateAllType
 
   -- ** Validation by branch

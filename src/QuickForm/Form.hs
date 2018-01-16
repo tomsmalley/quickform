@@ -111,17 +111,17 @@ type family Reduce (r :: Reduced) (f :: QuickForm) :: Type where
   Reduce Hs (Validated _ a _) = a
   Reduce Hs (Unvalidated a _) = a
   Reduce r (a :+: b) = Reduce r a :*: Reduce r b
-  Reduce Raw (Field _ _ f) = Touched (RawType f)
-  Reduce Hs (Field _ _ f) = OutputType f
+  Reduce Raw (Field _ f) = Touched (RawType f)
+  Reduce Hs (Field _ f) = OutputType f
 
 -- | Get the raw type of an element
 type family RawType (form :: FieldType) :: Type where
-  RawType (InputField _) = Text
+  RawType InputField = Text
   RawType (EnumField _) = Text
 
 -- | Get the shallowest output type of an element
 type family OutputType (form :: FieldType) :: Type where
-  OutputType (InputField _) = Text
+  OutputType InputField = Text
   OutputType (EnumField o) = o
 
 -- | Ensure use of the correct type function
@@ -137,5 +137,5 @@ type family ReduceError' (w :: WhichSide) (f :: QuickForm) :: Type where
   ReduceError' 'First (a :+: b) = ReduceError a
   ReduceError' 'Second (a :+: b) = ReduceError b
   ReduceError' 'Both (a :+: b) = ReduceError a :*: ReduceError b
-  ReduceError' w (Field _ _ (EnumField _)) = Touched (Set EnumError)
+  ReduceError' w (Field _ (EnumField _)) = Touched (Set EnumError)
 

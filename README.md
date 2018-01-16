@@ -50,28 +50,26 @@ obtain some data types like so:
 
 ```
 
-Now let's build our form type. We have a type level few combinators available to
+Now let's build our form type. We have a few type level combinators available to
 us, all of which have kind `QuickForm`, made available by DataKinds. This ensures
 you can only construct logically valid form structures.
 
 First, you need to know about `Field`. These are the most basic form
-elements, and just represent concrete HTML fields. `Field` takes three type
-parameters, the first of kind `HasLabel`, the
-second of kind `Symbol` (which is a type level string), and the
-second of kind `FieldType`. The `HasLabel` can be `NoLabel` or `Label Symbol`
-and denotes the label to be used for the field. The `Symbol` is used as the
-field's HTML `name`. The `FieldType` denotes the element used to display it,
-governing how values are marshalled to haskell types: for example, `<input>`
-elements can be thought of as storing `Text` values.
+elements, and just represent concrete HTML fields. `Field` takes two type
+parameters, the first of kind `Symbol` (which is a type level string), and the
+second of kind `FieldType`. The `Symbol` is used as the field's HTML `name`. The
+`FieldType` denotes the element used to display it, governing how values are
+marshalled to haskell types: for example, `<input>` elements can be thought of
+as storing `Text` values.
 
 Perhaps we want two password fields (so that we can check that they match):
 
 ```haskell
 
 > type EnterPasswordField
->   = Field (Label "Password") "password" (InputField PasswordInput)
+>   = Field "password" InputField
 > type RepeatPasswordField
->   = Field (Label "Repeat password") "password-repeat" (InputField PasswordInput)
+>   = Field "password-repeat" InputField
 
 ```
 
@@ -81,7 +79,7 @@ the type we want to use to provide the field data and get back after validation.
 
 ```haskell
 
-> type ColourField = Field (Label "Colour") "colour" (EnumField Colour)
+> type ColourField = Field "colour" (EnumField Colour)
 
 ```
 
@@ -95,8 +93,7 @@ unvalidated forms just convert to it with no potential for failure.
 
 ```haskell
 
-> type FilmField = Unvalidated Film
->         (Field (Label "Film") "film" (InputField TextInput))
+> type FilmField = Unvalidated Film (Field "film" InputField)
 
 ```
 
@@ -118,8 +115,7 @@ representing failure and the right hand side representing success.
 
 ```haskell
 
-> type EmailField = Validated EmailError Email
->          (Field (Label "Email address") "email" (InputField EmailInput))
+> type EmailField = Validated EmailError Email (Field "email" InputField)
 
 ```
 
@@ -210,11 +206,11 @@ because many errors might be applicable at once.
 
 It is important to emphasise that this type class encapsulates validation as a
 pure function, which can be called on *both* the server and the client.
-Additional serverside validation is done in the handler, after performing full
-form validation.
+Additional serverside validation should be done in the handler, after performing
+full form validation.
 
 Let's have a look at our example; first off, the unvalidated film field. The sub
-field in this case is `Field "film" TextField`, so the haskell type will
+field in this case is `Field "film" InputField`, so the haskell type will
 just be `Text`. Since it is unvalidated, we can always produce a `Film` value
 given a `Text` value.
 
