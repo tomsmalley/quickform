@@ -1,4 +1,5 @@
-resolver: lts-7.19
+resolver: lts-9.13
+system-ghc: true
 flags: {}
 packages:
 - .

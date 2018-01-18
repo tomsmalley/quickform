@@ -1,12 +1,16 @@
 {-# LANGUAGE DeriveGeneric, ExistentialQuantification, KindSignatures
            , TypeFamilies, UndecidableInstances #-}
 
+{-# LANGUAGE GADTs #-}
+
 module QuickForm.TypeLevel
   ( QuickForm
   , Unvalidated
   , Validated
   , Field
   , (:+:)
+
+  , HList (..)
 
   , FieldType
   , InputField
@@ -26,6 +30,10 @@ import Data.Aeson
 import GHC.Generics (Generic)
 import GHC.TypeLits (Symbol)
 
+data HList a where
+  HCons :: a -> HList as -> HList (a ': as)
+  HNil :: HList '[]
+
 -- | This is promoted to a kind, and forms the basis of the library. See
 -- below for explanations of the constructors.
 data QuickForm
@@ -33,6 +41,7 @@ data QuickForm
   | forall e a. Validated e a QuickForm
   | Field Symbol FieldType
   | (:+:) QuickForm QuickForm
+--  | SubForm [QuickForm]
 
 -- | Convert the sub form @b@ :: 'QuickForm' to type @a@.
 type Unvalidated a (b :: QuickForm) = 'Unvalidated a b
@@ -74,14 +83,14 @@ data WhichSide = First | Second | Both | Neither
 
 -- | Finds which side the target form is on
 type family FindSub (form :: QuickForm) (sub :: QuickForm) :: WhichSide where
-  FindSub (a :+: b) c = HasSub a c `ChooseSide` HasSub b c
+--  FindSub (a :+: b) c = HasSub a c `ChooseSide` HasSub b c
   FindSub (Validated _ _ b) c = 'False `ChooseSide` HasSub b c
   FindSub (Unvalidated _ b) c = 'False `ChooseSide` HasSub b c
 
 -- | Determine if a form 'sub' is in 'form'
 type family HasSub (form :: QuickForm) (sub :: QuickForm) :: Bool where
   HasSub a a = 'True
-  HasSub (a :+: b) c = HasSub a c `Or` HasSub b c
+--  HasSub (a :+: b) c = HasSub a c `Or` HasSub b c
   HasSub (Validated _ _ b) c = HasSub b c
   HasSub (Unvalidated _ b) c = HasSub b c
   HasSub a b = 'False
@@ -103,7 +112,7 @@ type family Or (a :: Bool) (b :: Bool) :: Bool where
 type family FindError (form :: QuickForm) :: WhichSide where
   FindError (Validated _ _ b) = 'True `ChooseSide` HasError b
   FindError (Unvalidated _ b) = 'False `ChooseSide` HasError b
-  FindError (a :+: b) = HasError a `ChooseSide` HasError b
+--  FindError (a :+: b) = HasError a `ChooseSide` HasError b
   FindError a = 'Neither
 
 -- | Find if a given form has validated forms somewhere inside it
@@ -112,5 +121,5 @@ type family HasError (form :: QuickForm) :: Bool where
   HasError (Field _ _) = 'False
   HasError (Validated _ _ _) = 'True
   HasError (Unvalidated _ b) = HasError b
-  HasError (a :+: b) = HasError a `Or` HasError b
+--  HasError (a :+: b) = HasError a `Or` HasError b
 

@@ -42,44 +42,27 @@ module QuickForm
   -- * Term level
 
   -- ** Form types
-  , Form (Form, unForm)
-  , reform
+  , Form (..)
   , Touched (..)
+  , hasError
 
   -- ** Reduced types
-  , Reduced
   , Raw
   , Hs
   , Err
 
+  , module QuickForm.Validation
+
   -- ** Constructors
-  , (:*:) ((:+:))
 
   -- * Validation
 
-  , anyErrors
-  , AnyErrors
-
-  -- ** Validation class
-  , Validation (..)
-  , ValidationType
-
-  -- ** Full validation
-  , validateAll
-  , ValidateAll
-  , ValidateAllType
-
-  -- ** Validation by branch
-  , validateBranch
-
-  -- * Lenses
-  , subform
-  , (??~)
+--  , anyErrors
+--  , AnyErrors
+--  , hasError
 
   ) where
 
-import QuickForm.BranchValidation
 import QuickForm.Form
-import QuickForm.Lens
 import QuickForm.TypeLevel
 import QuickForm.Validation

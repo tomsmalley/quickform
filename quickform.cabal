@@ -26,15 +26,14 @@ library
     cpp-options:       -DNO_FANCY_ERRORS
 
   exposed-modules:     QuickForm
-                     , QuickForm.BranchValidation
                      , QuickForm.Form
-                     , QuickForm.Lens
                      , QuickForm.TypeLevel
                      , QuickForm.Validation
 
   build-depends:       base >= 4.9 && < 5
                      , aeson
                      , containers
+                     , unordered-containers
                      , deepseq
                      , lens
                      , text

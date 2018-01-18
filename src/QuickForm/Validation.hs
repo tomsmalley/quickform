@@ -1,186 +1,83 @@
-{-# LANGUAGE AllowAmbiguousTypes, TypeFamilies, UndecidableInstances #-}
-{-# OPTIONS_HADDOCK hide #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module QuickForm.Validation where
 
-import Text.Read (readMaybe)
-import Data.Text (Text, unpack)
-import qualified Data.Text as T
+import Data.Proxy
 import Data.Set (Set)
-import qualified Data.Set as S
 
 import QuickForm.Form
 import QuickForm.TypeLevel
 
--- | Like monoid's mempty, but produces Just mempty instead of Nothing
-class EmptySetErrors a where
-  emptySetErrors :: a
-instance Monoid a => EmptySetErrors (Touched a) where
-  emptySetErrors = Touched mempty
-instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a, b) where
-  emptySetErrors = (emptySetErrors, emptySetErrors)
-instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
-  emptySetErrors = emptySetErrors :+: emptySetErrors
 
-type family ValidationType (form :: QuickForm) where
-  ValidationType (Unvalidated a b) = Form 'Hs b -> a
-  ValidationType (Validated e a b) = Form 'Hs b -> Either (Set e) a
-  ValidationType (Field _ (EnumField a)) = Text -> Either (Set EnumError) a
+data ValFunc
+type instance Args ValFunc (Validated e a sub)
+  = (Form Hs sub -> Either (Set e) a)
+type instance Args ValFunc (Unvalidated a sub)
+  = (Form Hs sub -> a)
+type instance Args ValFunc (Field n InputField) = Proxy n -- FIXME why is the name here and not elsewhere
+type instance Args ValFunc (f1 :+: f2) = ()
 
--- Any FormSet can be validated
-class Validation (f :: QuickForm) where
-  validate :: ValidationType f
+runValidator
+  :: Form ValFunc f -> Form Raw f
+  -> Either (Form Err f) (Form Hs f)
 
-type AnyErrors f = AnyErrors' (FindError f) f
-anyErrors :: forall f. AnyErrors f => Form Err f -> Bool
-anyErrors = anyErrors' @(FindError f)
+runValidator (InputField _) (InputField (Proxy, raw))
+  = Right $ InputField $ fromTouched "" raw
 
-class AnyErrors' (findError :: WhichSide) (f :: QuickForm) where
-  anyErrors' :: Form Err f -> Bool
+runValidator (Pair () f g) (Pair () a b)
+  = runPair (runValidator f a) (runValidator g b)
 
-instance AnyErrors' 'Neither (Field n (EnumField t)) where
-  anyErrors' (Form e) = hasError e
-instance HasError b ~ 'False
-  => AnyErrors' 'First (Validated e a b) where
-    anyErrors' (Form e) = hasError e
-instance (AnyErrors b, HasError b ~ 'True)
-  => AnyErrors' 'Both (Validated e a b) where
-    anyErrors' (Form (e, b)) = hasError e || anyErrors @b (Form b)
-instance (AnyErrors b, HasError b ~ 'True)
-  => AnyErrors' 'Second (Unvalidated a b) where
-    anyErrors' = anyErrors @b . reform
-instance (AnyErrors a, AnyErrors b, HasError a ~ 'True, HasError b ~ 'True)
-  => AnyErrors' 'Both (a :+: b) where
-    anyErrors' (Form (a :+: b)) = anyErrors @a (Form a) || anyErrors @b (Form b)
-instance (AnyErrors a, HasError a ~ 'True, HasError b ~ 'False)
-  => AnyErrors' 'First (a :+: b) where
-    anyErrors' = anyErrors @a . reform
-instance (AnyErrors b, HasError a ~ 'False, HasError b ~ 'True)
-  => AnyErrors' 'Second (a :+: b) where
-    anyErrors' = anyErrors @b . reform
+runValidator (Unvalidated f sub) (Unvalidated () b)
+  = runUnvalidated f $ runValidator sub b
 
-hasError :: Touched (Set e) -> Bool
-hasError Untouched = False
-hasError (Touched s) = not $ S.null s
+runValidator (Validated f sub) (Validated () b)
+  = runValidated f $ runValidator sub b
+{-# INLINE runValidator #-}
 
--- Validation ------------------------------------------------------------------
+--runValidator (EnumField f) (Form raw)
+--  = case f $ fromTouched mempty raw of
+--    Nothing -> Left $ Form $ Touched [EnumReadFailed]
+--    Just a -> Right $ Form a
 
--- | For guiding GHC to the correct types
-validateAll :: forall f. ValidateAll f
-     => Form 'Raw f -> ValidateAllType (HasError f) f
-validateAll = validateAll'
 
--- | For guiding GHC to the correct types
-type ValidateAll f = ValidateAll' (FindError f) f
+runPair
+  :: (EmptySetErrors (Form Err f), EmptySetErrors (Form Err g))
+  => Either (Form Err f) (Form Hs f)
+  -> Either (Form Err g) (Form Hs g)
+  -> Either (Form Err (f :+: g)) (Form Hs (f :+: g))
+runPair (Left i1) (Left i2) = Left $ Pair () i1 i2
+runPair (Left i1) _ = Left $ Pair () i1 emptySetErrors
+runPair _ (Left i2) = Left $ Pair () emptySetErrors i2
+runPair (Right j1) (Right j2) = Right $ Pair () j1 j2
 
-type family ValidateAllType (hasError :: Bool) (form :: QuickForm) where
-  ValidateAllType 'False f = Form 'Hs f
-  ValidateAllType 'True f = Either (Form 'Err f) (Form 'Hs f)
+runValidated
+  :: EmptySetErrors (Form Err sub)
+  => (Form Hs sub -> Either (Set e) a)
+  -> Either (Form Err sub) (Form Hs sub)
+  -> (Either (Form Err (Validated e a sub)) (Form Hs (Validated e a sub)))
+runValidated f = \case
+  Left e -> Left $ Validated mempty e
+  Right hs -> case f hs of
+    Left e -> Left $ Validated (Touched e) emptySetErrors
+    Right a -> Right $ Validated a hs
 
--- | Need to pull errorLocation out into the class head so that we can match on
--- it for the different cases
-class FindError f ~ errorLocation
-  => ValidateAll' (errorLocation :: WhichSide) (f :: QuickForm) where
-    validateAll' :: Form 'Raw f -> ValidateAllType (HasError f) f
-
--- Base
-instance ValidateAll' 'Neither (Field n InputField) where
-  validateAll' = Form . fromTouched T.empty . unForm
-
--- | Base enum
-instance Read a => ValidateAll' 'Neither (Field n (EnumField a)) where
-  validateAll' (Form t) = case readMaybe $ unpack $ fromTouched T.empty t of
-    Nothing -> Left $ Form $ Touched $ S.singleton EnumReadFailed
-    Just a  -> Right $ Form a
-
--- Unvalidated parent with sub validation
-instance
-  ( ValidateAll b, HasError b ~ 'True
-  , Validation form
-  , form ~ (Unvalidated a b)
-  ) => ValidateAll' 'Second (Unvalidated a b) where
-    validateAll' (Form b)
-      = case validateAll @b (Form b) of
-        Left (Form err) -> Left $ Form err
-        Right form -> Right . Form $ validate @form form
-
--- Unvalidated parent without sub validation
-instance
-  ( ValidateAll b, HasError b ~ 'False
-  , Validation form
-  , form ~ (Unvalidated a b)
-  ) => ValidateAll' 'Neither (Unvalidated a b) where
-    validateAll'
-      = Form . validate @form . validateAll @b . reform
-
--- Validated parent with sub validation
-instance
-  ( ValidateAll b, HasError b ~ 'True
-  , Validation form
-  , form ~ (Validated e a b)
-  , EmptySetErrors (Reduce Err b)
-  ) => ValidateAll' 'Both (Validated e a b) where
-    validateAll' (Form b)
-      = case validateAll @b (Form b) of
-        Left (Form err) -> Left $ Form (mempty, err)
-        Right form -> case validate @form form of
-          Left err -> Left $ Form (Touched err, emptySetErrors)
-          Right v' -> Right $ Form v'
-
--- Validated parent without sub validation
-instance
-  ( ValidateAll b, HasError b ~ 'False
-  , Validation form
-  , form ~ (Validated e a b)
-  ) => ValidateAll' 'First (Validated e a b) where
-    validateAll' (Form b)
-      = case validate @form $ validateAll @b (Form b) of
-          Left err -> Left $ Form $ Touched err
-          Right v' -> Right $ Form v'
-
--- Pair type where both sides have validation
-instance
-  ( ValidateAll a, HasError a ~ 'True
-  , ValidateAll b, HasError b ~ 'True
-  , EmptySetErrors (Reduce Err a)
-  , EmptySetErrors (Reduce Err b)
-  ) => ValidateAll' 'Both (a :+: b) where
-    validateAll' (Form (a :+: b))
-      = case (validateAll @a (Form a), validateAll @b (Form b)) of
-             (Left a', Left b') -> Left . Form $ unForm a' :+: unForm b'
-             (Left a', _) -> Left . Form $ unForm a' :+: emptySetErrors
-             (_, Left b') -> Left . Form $ emptySetErrors :+: unForm b'
-             (Right a', Right b') -> Right . Form $ unForm a' :+: unForm b'
-
--- Pair type where the first/left side has validation
-instance
-  ( ValidateAll a, HasError a ~ 'True
-  , ValidateAll b, HasError b ~ 'False
-  ) => ValidateAll' 'First (a :+: b) where
-    validateAll' (Form (a :+: b))
-      = case validateAll @a (Form a) of
-          Left a' -> Left $ reform a'
-          Right a' -> Right . Form $ unForm a' :+: unForm b'
-        where b' = validateAll @b (Form b)
-
--- Pair type where the second/right side has validation
-instance
-  ( ValidateAll a, ValidateAll b
-  , HasError a ~ 'False, HasError b ~ 'True
-  ) => ValidateAll' 'Second (a :+: b) where
-    validateAll' (Form (a :+: b))
-      = case validateAll @b (Form b) of
-          Left b' -> Left $ reform b'
-          Right b' -> Right . Form $ unForm a' :+: unForm b'
-        where a' = validateAll @a (Form a)
-
--- Pair type where neither side have validation
-instance
-  ( ValidateAll a, HasError a ~ 'False
-  , ValidateAll b, HasError b ~ 'False
-  ) => ValidateAll' 'Neither (a :+: b) where
-    validateAll' (Form (a :+: b))
-      = Form $ unForm a' :+: unForm b'
-        where a' = validateAll @a (Form a)
-              b' = validateAll @b (Form b)
+runUnvalidated
+  :: (Form Hs sub -> a)
+  -> Either (Form Err sub) (Form Hs sub)
+  -> Either (Form Err (Unvalidated a sub)) (Form Hs (Unvalidated a sub))
+runUnvalidated f = \case
+  Left e -> Left $ Unvalidated () e
+  Right hs -> Right $ Unvalidated (f hs) hs
 
