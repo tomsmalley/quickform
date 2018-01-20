@@ -1,3 +1,5 @@
+{-# LANGUAGE PatternSynonyms #-}
+
 -- | QuickForm is a library for building type level descriptions of HTML forms,
 -- providing data level representations for raw form data, field errors,
 -- and final Haskell types in a type safe manner. It is designed to be used by
@@ -31,25 +33,19 @@ module QuickForm
   , Validated
   , Unvalidated
   , Field
-  , (:+:)
-
-  -- ** Field types
-  , FieldType
-  , InputField
-  , EnumField
-  , EnumError (..)
+  , SubForm
 
   -- * Term level
 
   -- ** Form types
-  , Form (..)
   , Touched (..)
   , hasError
 
-  -- ** Reduced types
-  , Raw
-  , Hs
-  , Err
+  , FormErr (..)
+  , FormRaw (..)
+  , FormHs (..)
+  , HList (..)
+  , GetHs (..)
 
   , module QuickForm.Validation
 

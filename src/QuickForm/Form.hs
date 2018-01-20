@@ -5,6 +5,9 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PolyKinds #-}
 
 -- | Form wrapper
 module QuickForm.Form where
@@ -36,29 +39,19 @@ hasError (Touched s) = not $ S.null s
 -- | Like monoid's mempty, but produces Just mempty instead of Nothing
 class EmptySetErrors a where
   emptySetErrors :: a
+instance EmptySetErrors [a] where
+  emptySetErrors = []
 instance EmptySetErrors () where
   emptySetErrors = ()
 instance Monoid a => EmptySetErrors (Touched a) where
   emptySetErrors = Touched mempty
 instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a, b) where
   emptySetErrors = (emptySetErrors, emptySetErrors)
---instance (EmptySetErrors a, EmptySetErrors b) => EmptySetErrors (a :*: b) where
---  emptySetErrors = emptySetErrors :+: emptySetErrors
-
-instance (EmptySetErrors (Form Err sub), Ord e)
-  => EmptySetErrors (Form Err (Validated e a sub)) where
-  emptySetErrors = Validated emptySetErrors emptySetErrors
-
-instance (EmptySetErrors (Form Err sub))
-  => EmptySetErrors (Form Err (Unvalidated a sub)) where
-  emptySetErrors = Unvalidated emptySetErrors emptySetErrors
-
-instance KnownSymbol n => EmptySetErrors (Form Err (Field n InputField)) where
-  emptySetErrors = InputField emptySetErrors
-
-instance (EmptySetErrors (Form Err f1), EmptySetErrors (Form Err f2))
-  => EmptySetErrors (Form Err (f1 :+: f2)) where
-    emptySetErrors = Pair emptySetErrors emptySetErrors emptySetErrors
+instance EmptySetErrors (HList '[]) where
+  emptySetErrors = HNil
+instance (EmptySetErrors a, EmptySetErrors (HList as))
+  => EmptySetErrors (HList (a ': as)) where
+  emptySetErrors = emptySetErrors :| emptySetErrors
 
 -- Touched type ----------------------------------------------------------------
 
@@ -88,120 +81,141 @@ fromTouched _ (Touched a) = a
 
 -- Type functions --------------------------------------------------------------
 
--- | Stores the raw form values (e.g. Text from an <input> element)
-data Raw
--- | Stores the validated haskell types
-data Err
--- | Stores errors from validation
-data Hs
+data FormRaw (q :: QuickForm) where
+  ValidatedRaw :: FormRaw q -> FormRaw (Validated e a q)
+  UnvalidatedRaw :: FormRaw q -> FormRaw (Unvalidated a q)
+  FieldRaw :: Proxy n -> a -> FormRaw (Field n a)
+  FormRaw :: HList (Map FormRaw q) -> FormRaw (SubForm q)
 
-type family Args r (f :: QuickForm)
+instance Eq (FormRaw q) => Eq (FormRaw (Validated e a q)) where
+  ValidatedRaw f == ValidatedRaw g = f == g
+instance Eq (FormRaw q) => Eq (FormRaw (Unvalidated a q)) where
+  UnvalidatedRaw f == UnvalidatedRaw g = f == g
+instance Eq a => Eq (FormRaw (Field n a)) where
+  FieldRaw Proxy a == FieldRaw Proxy a' = a == a'
+instance Eq (HList (Map FormRaw q)) => Eq (FormRaw (SubForm q)) where
+  FormRaw f == FormRaw g = f == g
 
-data Form r (f :: QuickForm) where
-  Validated
-    :: EmptySetErrors (Form Err f)
-    => Args r (Validated e a f)
-    -> Form r f
-    -> Form r (Validated e a f)
-  Unvalidated
-    :: Args r (Unvalidated a f)
-    -> Form r f
-    -> Form r (Unvalidated a f)
-  InputField
-    :: KnownSymbol n
-    => Args r (Field n InputField)
-    -> Form r (Field n InputField)
-  Pair
-    :: (EmptySetErrors (Form Err f), EmptySetErrors (Form Err g))
-    => Args r (f :+: g)
-    -> Form r f
-    -> Form r g
-    -> Form r (f :+: g)
+instance Show (FormRaw q) => Show (FormRaw (Validated e a q)) where
+  show (ValidatedRaw f) = "ValidatedRaw " ++ show f
+instance Show (FormRaw q) => Show (FormRaw (Unvalidated a q)) where
+  show (UnvalidatedRaw f) = "UnvalidatedRaw " ++ show f
+instance Show a => Show (FormRaw (Field n a)) where
+  show (FieldRaw Proxy a) = "FieldRaw Proxy " ++ show a
+instance Show (HList (Map FormRaw q)) => Show (FormRaw (SubForm q)) where
+  show (FormRaw f) = "FormRaw " ++ show f
 
-symbolText :: KnownSymbol s => Proxy s -> Text
-symbolText = T.pack . symbolVal
+data FormHs (q :: QuickForm) where
+  ValidatedHs :: a -> FormHs (Validated e a q)
+  UnvalidatedHs :: a -> FormHs (Unvalidated a q)
+  FieldHs :: a -> FormHs (Field n a)
+  FormHs :: HList (Map FormHs q) -> FormHs (SubForm q)
 
-rawHashMap :: Form Raw f -> HashMap Text Value
-rawHashMap (Validated _ f) = rawHashMap f
-rawHashMap (Unvalidated _ f) = rawHashMap f
-rawHashMap (Pair _ f g) = rawHashMap f <> rawHashMap g
-rawHashMap (InputField (n, t))
+class GetHs q a | q -> a where
+  getHs :: FormHs q -> a
+
+instance GetHs (Validated e a q) a where
+  getHs (ValidatedHs a) = a
+instance GetHs (Unvalidated a q) a where
+  getHs (UnvalidatedHs a) = a
+instance GetHs (Field n a) a where
+  getHs (FieldHs a) = a
+
+data FormErr (q :: QuickForm) where
+  ValidatedErr :: e -> FormErr q -> FormErr (Validated e a q)
+  UnvalidatedErr :: FormErr q -> FormErr (Unvalidated a q)
+  FieldErr :: FormErr (Field n a)
+  FormErr :: HList (Map FormErr q) -> FormErr (SubForm q)
+
+instance (EmptySetErrors e, EmptySetErrors (FormErr q), Ord e)
+  => EmptySetErrors (FormErr (Validated e a q)) where
+  emptySetErrors = ValidatedErr emptySetErrors emptySetErrors
+instance EmptySetErrors (FormErr q)
+  => EmptySetErrors (FormErr (Unvalidated a q)) where
+  emptySetErrors = UnvalidatedErr emptySetErrors
+instance KnownSymbol n
+  => EmptySetErrors (FormErr (Field n Text)) where
+  emptySetErrors = FieldErr
+instance (EmptySetErrors (HList (Map FormErr q)))
+  => EmptySetErrors (FormErr (SubForm q)) where
+    emptySetErrors = FormErr emptySetErrors
+
+{-
+class ToHashMap f where
+  toHashMap :: FormRaw f -> HashMap Text Value
+instance ToHashMap (Validated e a f) where
+  toHashMap (ValidatedRaw f) = toHashMap f
+instance ToHashMap (Unvalidated a f) where
+  toHashMap (UnvalidatedRaw f) = toHashMap f
+instance (ToHashMap f, ToHashMap (SubForm fs))
+  => ToHashMap (SubForm (f ': fs)) where
+  toHashMap (FormRaw (f :| fs)) = toHashMap f <> toHashMap (FormRaw fs)
+
+rawHashMap :: FormRaw f -> HashMap Text Value
+rawHashMap (ValidatedRaw f) = rawHashMap f
+rawHashMap (UnvalidatedRaw f) = rawHashMap f
+rawHashMap (FormRaw HNil) = HM.empty
+rawHashMap (FormRaw (f :| fs)) = rawHashMap f <> rawHashMap (FormRaw fs)
+rawHashMap (FieldRaw n t)
   = HM.singleton (symbolText n) $ touched Null String t
 
 class FromHashMap f where
-  fromHashMap :: HashMap Text Value -> Parser (Form Raw f)
+  fromHashMap :: HashMap Text Value -> Parser (FormRaw f)
 
-instance (EmptySetErrors (Form Err f), FromHashMap f)
-  => FromHashMap (Validated e a f) where
-    fromHashMap = fmap (Validated ()) . fromHashMap
+instance FromHashMap f => FromHashMap (Validated e a f) where
+  fromHashMap = fmap ValidatedRaw . fromHashMap
 
 instance FromHashMap f => FromHashMap (Unvalidated a f) where
-  fromHashMap = fmap (Unvalidated ()) . fromHashMap
+  fromHashMap = fmap UnvalidatedRaw . fromHashMap
 
-instance
-  ( FromHashMap f, FromHashMap g
-  , EmptySetErrors (Form Err f), EmptySetErrors (Form Err g)
-  ) => FromHashMap (f :+: g) where
-  fromHashMap hm = Pair () <$> fromHashMap hm <*> fromHashMap hm
+instance FromHashMap (SubForm f) where
+  fromHashMap hm = FormRaw <$> fromHashMap hm
 
 instance KnownSymbol n => FromHashMap (Field n InputField) where
   fromHashMap hm = case HM.lookup k hm of
     Nothing -> fail $ "Missing form key: " ++ n
-    Just (String t) -> pure $ InputField (Proxy, Touched t)
-    Just Null -> pure $ InputField (Proxy, Untouched)
+    Just (String t) -> pure $ FieldRaw Proxy (Touched t)
+    Just Null -> pure $ FieldRaw Proxy Untouched
     Just v -> typeMismatch "String or Null" v
     where k = T.pack n
           n = symbolVal (Proxy @n)
 
-instance ToJSON (Form Raw f) where
+instance ToJSON (FormRaw f) where
   toJSON f = Object $ rawHashMap f
 
-instance FromHashMap f => FromJSON (Form Raw f) where
+instance FromHashMap f => FromJSON (FormRaw f) where
   parseJSON = withObject "Form Raw" fromHashMap
+-}
 
-type instance Args Err (Validated e _ _) = Touched (Set e)
-type instance Args Err (Unvalidated _ _) = ()
-type instance Args Err (Field _ InputField) = ()
-type instance Args Err (a :+: b) = ()
 
-type instance Args Raw (Validated _ _ _) = ()
-type instance Args Raw (Unvalidated _ _) = ()
-type instance Args Raw (Field n InputField) = (Proxy n, Touched Text)
-type instance Args Raw (a :+: b) = ()
+-- Test
 
-type instance Args Hs (Validated _ a _) = a
-type instance Args Hs (Unvalidated a _) = a
-type instance Args Hs (Field _ InputField) = Text
-type instance Args Hs (a :+: b) = ()
+data FN = FN Text
+data NotEmpty = NotEmpty
+data LN = LN Text
+data Name = Name FN LN
 
-instance (Eq (Form r f), Eq (Args r (Validated e a f)))
-  => Eq (Form r (Validated e a f)) where
-  Validated a b == Validated a' b' = a == a' && b == b'
+type NameForm = Unvalidated Name (SubForm
+  [ Validated NotEmpty FN (Field "fn" Text)
+  , Unvalidated LN (Field "ln" Text)
+  ])
 
-instance (Eq (Form r f), Eq (Args r (Unvalidated a f)))
-  => Eq (Form r (Unvalidated a f)) where
-  Unvalidated a b == Unvalidated a' b' = a == a' && b == b'
+nameRaw :: FormRaw NameForm
+nameRaw = UnvalidatedRaw $ FormRaw $
+  ValidatedRaw (FieldRaw Proxy "fn")
+  :| UnvalidatedRaw (FieldRaw Proxy "ln") :| HNil
 
-instance (Eq (Form r f), Eq (Form r g), Eq (Args r (f :+: g)))
-  => Eq (Form r (f :+: g)) where
-    Pair x a b == Pair x' a' b' = x == x' && a == a' && b == b'
+--nameRaw' :: ToRaw NameForm
+--nameRaw' = "test" :| "ln" :| HNil
 
-instance (Eq (Args r (Field n InputField)))
-  => Eq (Form r (Field n InputField)) where
-  InputField a == InputField a' = a == a'
+nameErr :: FormErr NameForm
+nameErr = UnvalidatedErr $ FormErr $
+  ValidatedErr NotEmpty FieldErr :| UnvalidatedErr FieldErr :| HNil
 
-instance (Show (Form r sub), Show (Args r (Validated e a sub)))
-  => Show (Form r (Validated e a sub)) where
-    show (Validated a b) = "Validated " ++ show a ++ " " ++ show b
+nameHs :: FormHs NameForm
+nameHs = UnvalidatedHs $ Name (FN "fn") (LN "ln")
 
-instance (Show (Form r sub), Show (Args r (Unvalidated a sub)))
-  => Show (Form r (Unvalidated a sub)) where
-    show (Unvalidated a b) = "Unvalidated " ++ show a ++ " " ++ show b
-
-instance (Show (Form r f1), Show (Form r f2), Show (Args r (f1 :+: f2)))
-  => Show (Form r (f1 :+: f2)) where
-    show (Pair args a b) = "Pair " ++ show args ++ " " ++ show a ++ " " ++ show b
-instance (Show (Args r (Field n InputField)))
-  => Show (Form r (Field n InputField)) where
-    show (InputField args) = "InputField " ++ show args
+nameSubHs :: FormHs (SubForm [ Validated NotEmpty FN (Field "fn" Text)
+                             , Unvalidated LN (Field "ln" Text)] )
+nameSubHs = FormHs $ ValidatedHs (FN "fn") :| UnvalidatedHs (LN "ln") :| HNil
 
