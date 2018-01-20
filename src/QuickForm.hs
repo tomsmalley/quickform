@@ -38,13 +38,10 @@ module QuickForm
   -- * Term level
 
   -- ** Form types
-  , Touched (..)
-  , hasError
-
   , FormErr (..)
   , FormRaw (..)
   , FormHs (..)
-  , HList (..)
+  , TList (..)
   , GetHs (..)
 
   , module QuickForm.Validation

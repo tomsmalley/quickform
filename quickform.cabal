@@ -37,6 +37,7 @@ library
                      , deepseq
                      , lens
                      , text
+                     , data-default
 
   default-extensions:  ConstraintKinds
                      , DataKinds

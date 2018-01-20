@@ -13,9 +13,11 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module QuickForm.Validation where
 
+import Data.Default
 import Data.Bifunctor (bimap)
 import Data.Proxy
 import Data.Set (Set)
@@ -24,7 +26,7 @@ import Data.Text (Text)
 import QuickForm.Form
 import QuickForm.TypeLevel
 
-
+-- | Validation functions
 data FormVal (q :: QuickForm) where
   ValidatedVal
     :: (FormHs q -> Either e a) -> FormVal q
@@ -33,17 +35,18 @@ data FormVal (q :: QuickForm) where
     :: (FormHs q -> a) -> FormVal q
     -> FormVal (Unvalidated a q)
   FieldVal :: FormVal (Field n a)
-  FormVal :: HList (Map FormVal q) -> FormVal (SubForm q)
+  FormVal :: TList (Map FormVal q) -> FormVal (SubForm q)
 
 
-class ValidateForm q where
+class Wf q => ValidateForm q where
   validateForm :: FormVal q -> FormRaw q -> ValResult q
 
 instance ValidateForm (Field n Text) where
-  validateForm FieldVal (FieldRaw Proxy raw) = Hs $ FieldHs $ raw
+  validateForm FieldVal (FieldRaw raw) = Hs $ FieldHs $ raw
   {-# INLINE validateForm #-}
 
-instance (JoinSubForm qs, ValidateSubForm qs) => ValidateForm (SubForm qs) where
+instance (Wf (SubForm qs), JoinSubForm qs, ValidateSubForm qs)
+  => ValidateForm (SubForm qs) where
   validateForm fs as = joinSubForm $ validateSubForm fs as
   {-# INLINE validateForm #-}
 
@@ -52,7 +55,7 @@ instance ValidateForm q => ValidateForm (Unvalidated a q) where
     = runUnvalidated f $ validateForm sub b
   {-# INLINE validateForm #-}
 
-instance (Monoid e, EmptySetErrors (FormErr q), ValidateForm q)
+instance (Default e, Default (FormErr q), ValidateForm q)
   => ValidateForm (Validated e a q) where
   validateForm (ValidatedVal f sub) (ValidatedRaw b)
     = runValidated f $ validateForm sub b
@@ -60,15 +63,13 @@ instance (Monoid e, EmptySetErrors (FormErr q), ValidateForm q)
 
 class ValidateSubForm qs where
   validateSubForm
-    :: FormVal (SubForm qs) -> FormRaw (SubForm qs) -> HList (Map ValResult qs)
+    :: FormVal (SubForm qs) -> FormRaw (SubForm qs) -> TList (Map ValResult qs)
 
 instance ValidateSubForm '[] where
-  validateSubForm (FormVal HNil) (FormRaw HNil) = HNil
+  validateSubForm (FormVal Nil) (FormRaw Nil) = Nil
 
 instance
-  ( EmptySetErrors (HList (Map FormErr qs))
-  , EmptySetErrors (FormErr q)
-  , ValidateForm q, ValidateSubForm qs
+  ( ValidateForm q, ValidateSubForm qs
   ) => ValidateSubForm (q ': qs) where
     validateSubForm (FormVal (f :| fs)) (FormRaw (a :| as)) =
       validateForm f a :| validateSubForm @qs (FormVal fs) (FormRaw as)
@@ -94,20 +95,20 @@ valHs (Hs v) = Just v
 valHs _ = Nothing
 
 class JoinSubForm qs where
-  joinSubForm :: HList (Map ValResult qs) -> ValResult (SubForm qs)
+  joinSubForm :: TList (Map ValResult qs) -> ValResult (SubForm qs)
 
 instance JoinSubForm '[] where
-  joinSubForm HNil = Hs $ FormHs HNil
+  joinSubForm Nil = Hs $ FormHs Nil
 
 instance
-  ( EmptySetErrors (HList (Map FormErr qs))
-  , EmptySetErrors (FormErr q)
+  ( Default (TList (Map FormErr qs))
+  , Default (FormErr q)
   , JoinSubForm qs
   ) => JoinSubForm (q ': qs) where
     joinSubForm (e :| es) = case (e, joinSubForm @qs es) of
       (Err e, Err (FormErr es)) -> Err $ FormErr $ e :| es
-      (Err e, _) -> Err $ FormErr $ e :| emptySetErrors
-      (_, Err (FormErr es)) -> Err $ FormErr $ emptySetErrors :| es
+      (Err e, _) -> Err $ FormErr $ e :| def
+      (_, Err (FormErr es)) -> Err $ FormErr $ def :| es
       (Hs a, Hs (FormHs as)) -> Hs $ FormHs $ a :| as
 
 
@@ -117,12 +118,12 @@ runUnvalidated f = \case
   Hs hs -> Hs $ UnvalidatedHs $ f hs
 
 runValidated
-  :: (EmptySetErrors (FormErr q), Monoid e)
+  :: (Default (FormErr q), Default e)
   => (FormHs q -> Either e a) -> ValResult q -> ValResult (Validated e a q)
 runValidated f q = case q of
-  Err e -> Err $ ValidatedErr mempty e
+  Err e -> Err $ ValidatedErr def e
   Hs hs -> case f hs of
-    Left e -> Err $ ValidatedErr e emptySetErrors
+    Left e -> Err $ ValidatedErr e def
     Right a -> Hs $ ValidatedHs a
 
 
