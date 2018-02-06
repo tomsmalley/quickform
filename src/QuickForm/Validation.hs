@@ -14,6 +14,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE PolyKinds #-}
 
 module QuickForm.Validation where
 
@@ -35,14 +36,13 @@ data FormVal (q :: QuickForm) where
     :: (FormHs q -> a) -> FormVal q
     -> FormVal (Unvalidated a q)
   FieldVal :: FormVal (Field n a)
-  FormVal :: TList (Map FormVal q) -> FormVal (SubForm q)
-
+  FormVal :: TList (Map FormVal qs) -> FormVal (SubForm qs)
 
 class Wf q => ValidateForm q where
   validateForm :: FormVal q -> FormRaw q -> ValResult q
 
 instance ValidateForm (Field n Text) where
-  validateForm FieldVal (FieldRaw raw) = Hs $ FieldHs $ raw
+  validateForm FieldVal (FieldRaw raw) = Hs $ FieldHs raw
   {-# INLINE validateForm #-}
 
 instance (Wf (SubForm qs), JoinSubForm qs, ValidateSubForm qs)
@@ -55,11 +55,17 @@ instance ValidateForm q => ValidateForm (Unvalidated a q) where
     = runUnvalidated f $ validateForm sub b
   {-# INLINE validateForm #-}
 
-instance (Default e, Default (FormErr q), ValidateForm q)
+instance (Default (FormErr q), ValidateForm q)
   => ValidateForm (Validated e a q) where
   validateForm (ValidatedVal f sub) (ValidatedRaw b)
     = runValidated f $ validateForm sub b
   {-# INLINE validateForm #-}
+
+instance Default (FormVal (Field n a)) where
+  def = FieldVal
+instance Default (TList (Map FormVal qs))
+  => Default (FormVal (SubForm qs)) where
+    def = FormVal def
 
 class ValidateSubForm qs where
   validateSubForm
@@ -118,12 +124,12 @@ runUnvalidated f = \case
   Hs hs -> Hs $ UnvalidatedHs $ f hs
 
 runValidated
-  :: (Default (FormErr q), Default e)
+  :: (Default (FormErr q))
   => (FormHs q -> Either e a) -> ValResult q -> ValResult (Validated e a q)
 runValidated f q = case q of
-  Err e -> Err $ ValidatedErr def e
+  Err e -> Err $ ValidatedErr Nothing e
   Hs hs -> case f hs of
-    Left e -> Err $ ValidatedErr e def
+    Left e -> Err $ ValidatedErr (Just e) def
     Right a -> Hs $ ValidatedHs a
 
 

@@ -5,6 +5,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE Rank2Types #-}
@@ -22,6 +23,8 @@ module QuickForm.TypeLevel
   , Names
   , All
   , TList (..)
+  , MapNames
+  , Concat
 
   , symbolText
 
@@ -42,6 +45,10 @@ import qualified Data.Text as T
 
 symbolText :: KnownSymbol s => Proxy s -> Text
 symbolText = T.pack . symbolVal
+
+--append :: TList as -> TList bs -> TList (Append as bs)
+--append Nil ys = ys
+--append (x :| xs) ys = x :| append xs ys
 
 -- | HList as a data family. This is lifted from the package 'HList'. The data
 -- family representation allows deriving instances, whereas the GADT
@@ -93,6 +100,7 @@ type SubForm qs = 'SubForm qs
 type family Map (f :: k -> k') (qs :: [k]) :: [k'] where
   Map _ '[] = '[]
   Map f (q ': qs) = f q ': Map f qs
+
 
 -- | Extract a list of field names from a 'QuickForm'
 type family Names (q :: QuickForm) :: [Symbol] where
@@ -159,6 +167,5 @@ type family Concat (as :: [[k]]) :: [k] where
 -- | Type level '++'
 type family Append (as :: [k]) (bs :: [k]) :: [k] where
   Append '[] bs = bs
-  Append as '[] = as
   Append (a ': as) bs = a ': Append as bs
 

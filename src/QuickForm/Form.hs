@@ -7,7 +7,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE InstanceSigs #-}
 
 -- | Form wrapper
 module QuickForm.Form where
@@ -51,8 +52,9 @@ instance Monoid (Touched a) where
   mappend = (<>)
 
 touched :: b -> (a -> b) -> Touched a -> b
-touched b _ Untouched = b
-touched _ f (Touched a) = f a
+touched b f = \case
+  Untouched -> b
+  Touched a -> f a
 
 fromTouched :: a -> Touched a -> a
 fromTouched a Untouched = a
@@ -104,33 +106,41 @@ instance GetHs (Unvalidated a q) a where
 instance GetHs (Field n a) a where
   getHs (FieldHs a) = a
 
-data family FormErr (q :: QuickForm)
-data instance FormErr (Validated e a q) = ValidatedErr e (FormErr q)
-newtype instance FormErr (Unvalidated a q) = UnvalidatedErr (FormErr q)
-newtype instance FormErr (SubForm qs) = FormErr (TList (Map FormErr qs))
-data instance FormErr (Field n a) = FieldErr deriving (Eq, Show, Generic)
+data FormErr (q :: QuickForm) where
+  ValidatedErr :: Maybe e -> FormErr q -> FormErr (Validated e a q)
+  UnvalidatedErr :: FormErr q -> FormErr (Unvalidated a q)
+  FormErr :: TList (Map FormErr qs) -> FormErr (SubForm qs)
+  FieldErr :: FormErr (Field n a)
 
-deriving instance (Show e, Show (FormErr q)) => Show (FormErr (Validated e a q))
-deriving instance Show (FormErr q) => Show (FormErr (Unvalidated a q))
-deriving instance Show (TList (Map FormErr qs)) => Show (FormErr (SubForm qs))
+instance (Show e, Show (FormErr q)) => Show (FormErr (Validated e a q)) where
+  show (ValidatedErr e q) = unwords ["ValidatedErr", show e, show q]
+instance Show (FormErr q) => Show (FormErr (Unvalidated a q)) where
+  show (UnvalidatedErr q) = unwords ["UnvalidatedErr", show q]
+instance Show (TList (Map FormErr qs)) => Show (FormErr (SubForm qs)) where
+  show (FormErr l) = unwords ["FormErr", show l]
+instance Show (FormErr (Field n a)) where
+  show FieldErr = "FieldErr"
 
-deriving instance (Eq e, Eq (FormErr q)) => Eq (FormErr (Validated e a q))
-deriving instance Eq (FormErr q) => Eq (FormErr (Unvalidated a q))
-deriving instance Eq (TList (Map FormErr qs)) => Eq (FormErr (SubForm qs))
+instance (Eq e, Eq (FormErr q)) => Eq (FormErr (Validated e a q)) where
+  ValidatedErr e q == ValidatedErr e' q' = e == e && q == q'
+instance Eq (FormErr q) => Eq (FormErr (Unvalidated a q)) where
+  UnvalidatedErr q == UnvalidatedErr q' = q == q'
+instance Eq (TList (Map FormErr qs)) => Eq (FormErr (SubForm qs)) where
+  FormErr l == FormErr l' = l == l'
+instance Eq (FormErr (Field n a)) where
+  FieldErr == FieldErr = True
 
-deriving instance (Generic e, Generic (FormErr q))
-  => Generic (FormErr (Validated e a q))
-deriving instance Generic (FormErr q) => Generic (FormErr (Unvalidated a q))
-deriving instance Generic (TList (Map FormErr qs))
-  => Generic (FormErr (SubForm qs))
-
-instance (Default e, Generic e, Generic (FormErr q), Default (FormErr q))
-  => Default (FormErr (Validated e a q))
-instance (Default (FormErr q), Generic (FormErr q))
-  => Default (FormErr (Unvalidated a q))
-instance (Generic (TList (Map FormErr qs)), Default (TList (Map FormErr qs)))
-  => Default (FormErr (SubForm qs))
-instance Default (FormErr (Field n a))
+instance Default (FormErr q)
+  => Default (FormErr (Validated e a q)) where
+    def = ValidatedErr def def
+instance Default (FormErr q)
+  => Default (FormErr (Unvalidated a q)) where
+    def = UnvalidatedErr def
+instance Default (TList (Map FormErr qs))
+  => Default (FormErr (SubForm qs)) where
+    def = FormErr def
+instance Default (FormErr (Field n a)) where
+  def = FieldErr
 
 --------------------------------------------------------------------------------
 
@@ -143,8 +153,9 @@ instance ToHashMap q => ToHashMap (Validated e a q) where
 instance ToHashMap q => ToHashMap (Unvalidated a q) where
   toHashMap (UnvalidatedRaw q) = toHashMap q
 
-instance KnownSymbol n => ToHashMap (Field n Text) where
-  toHashMap (FieldRaw value) = HM.singleton name $ String value
+instance (ToJSON a, KnownSymbol n)
+  => ToHashMap (Field n a) where
+  toHashMap (FieldRaw value) = HM.singleton name $ toJSON value
     where name = symbolText $ Proxy @n
 
 instance ToHashMap (SubForm '[]) where
@@ -178,11 +189,11 @@ instance (FromHashMap q, FromHashMap (SubForm qs))
   fromHashMap hm = (\r (FormRaw rs) -> FormRaw (r :| rs))
     <$> fromHashMap @q hm <*> fromHashMap @(SubForm qs) hm
 
-instance KnownSymbol n => FromHashMap (Field n Text) where
+instance (FromJSON a, KnownSymbol n)
+  => FromHashMap (Field n a) where
   fromHashMap hm = case HM.lookup k hm of
     Nothing -> fail $ "Missing form key: " ++ n
-    Just (String t) -> pure $ FieldRaw t
-    Just v -> typeMismatch "String or Null" v
+    Just v -> FieldRaw <$> parseJSON v
     where k = T.pack n
           n = symbolVal (Proxy @n)
 
@@ -213,7 +224,7 @@ nameRaw = UnvalidatedRaw $ FormRaw $
 
 nameErr :: FormErr NameForm
 nameErr = UnvalidatedErr $ FormErr $
-  ValidatedErr NotEmpty FieldErr :| UnvalidatedErr FieldErr :| Nil
+  ValidatedErr (Just NotEmpty) FieldErr :| UnvalidatedErr FieldErr :| Nil
 
 nameHs :: FormHs NameForm
 nameHs = UnvalidatedHs $ Name (FN "fn") (LN "ln")
