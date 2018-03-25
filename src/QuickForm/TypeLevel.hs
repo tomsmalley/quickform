@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, ExistentialQuantification, KindSignatures
+{-# LANGUAGE ExistentialQuantification, KindSignatures
            , TypeFamilies, UndecidableInstances #-}
 
 {-# LANGUAGE GADTs #-}
@@ -10,89 +10,77 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE Rank2Types #-}
 
-module QuickForm.TypeLevel
-  (
-    QuickForm
-  , Unvalidated
-  , Validated
-  , Field
-  , SubForm
-  , Map
-  , Wf
-  , Unique
-  , Names
-  , All
-  , TList (..)
-  , MapNames
-  , Concat
+module QuickForm.TypeLevel where
 
-  , symbolText
-
-  , Elem
-
-  ) where
-
-import Control.DeepSeq
-import Data.Text (Text)
-import Data.Aeson
-import GHC.Generics (Generic)
+import Data.Semigroup (Semigroup(..))
 import GHC.TypeLits
 import Data.Kind (Type, Constraint)
-import Data.Proxy
 import Data.Default
 
-import qualified Data.Text as T
+append :: TList as -> TList bs -> TList (Append as bs)
+append Nil ys = ys
+append (x :| xs) ys = x :| append xs ys
 
-symbolText :: KnownSymbol s => Proxy s -> Text
-symbolText = T.pack . symbolVal
-
---append :: TList as -> TList bs -> TList (Append as bs)
---append Nil ys = ys
---append (x :| xs) ys = x :| append xs ys
-
--- | HList as a data family. This is lifted from the package 'HList'. The data
--- family representation allows deriving instances, whereas the GADT
--- representation does not.
---
--- > data TList (a :: [Type]) where
--- >   (:|) :: a -> TList as -> TList (a ': as)
--- >   Nil :: TList '[]
-data family TList (as :: [Type])
-data instance TList '[] = Nil
-data instance TList (a ': as) = a :| TList as
+-- | Heterogeneous list
+data TList (a :: [Type]) where
+  Nil :: TList '[]
+  (:|) :: a -> TList as -> TList (a ': as)
 infixr 8 :|
 
-deriving instance Generic (TList '[])
-deriving instance (Generic a, Generic (TList as)) => Generic (TList (a ': as))
-deriving instance Show (TList '[])
-deriving instance (Show a, Show (TList as)) => Show (TList (a ': as))
-deriving instance Eq (TList '[])
-deriving instance (Eq a, Eq (TList as)) => Eq (TList (a ': as))
-deriving instance Ord (TList '[])
-deriving instance (Ord a, Ord (TList as)) => Ord (TList (a ': as))
+instance Show (TList '[]) where
+  showsPrec _ Nil = showString "Nil"
+instance (Show a, Show (TList as)) => Show (TList (a ': as)) where
+  showsPrec d (x :| xs) = showParen (d > fixity)
+    $ showsPrec (succ fixity) x
+    . showString " :| "
+    . showsPrec (succ fixity) xs
+      where fixity = 8
+
+instance Eq (TList '[]) where
+  Nil == Nil = True
+instance (Eq a, Eq (TList as)) => Eq (TList (a ': as)) where
+  x :| xs == y :| ys = x == y && xs == ys
+
+instance Ord (TList '[]) where
+  Nil `compare` Nil = EQ
+instance (Ord a, Ord (TList as)) => Ord (TList (a ': as)) where
+  (x :| xs) `compare` (y :| ys) = case x `compare` y of
+    EQ -> xs `compare` ys
+    c -> c
 
 instance Default (TList '[]) where
   def = Nil
 instance (Default a, Default (TList as)) => Default (TList (a ': as)) where
   def = def :| def
 
+instance Semigroup (TList '[]) where
+  Nil <> Nil = Nil
+instance (Semigroup a, Semigroup (TList as)) => Semigroup (TList (a ': as)) where
+  (a :| as) <> (a' :| as') = (a <> a') :| (as <> as')
+
+instance Monoid (TList '[]) where
+  mempty = Nil
+  mappend = (<>)
+instance (Semigroup a, Semigroup (TList as), Monoid a, Monoid (TList as))
+  => Monoid (TList (a ': as)) where
+  mempty = mempty :| mempty
+  mappend = (<>)
+
+
 -- | This is promoted to a kind, and forms the basis of the library. See
 -- below for explanations of the constructors.
 data QuickForm where
-  Unvalidated :: a -> QuickForm -> QuickForm
   Validated :: e -> a -> QuickForm -> QuickForm
   Field :: Symbol -> a -> QuickForm
-  SubForm :: [QuickForm] -> QuickForm
+  Fields :: [QuickForm] -> QuickForm
 
--- | Convert the sub form @q@ :: 'QuickForm' to type @a@.
-type Unvalidated a q = 'Unvalidated a q
 -- | Validate the sub form @q@ :: 'QuickForm' to type @a@ if successful,
 -- otherwise to type @e@.
 type Validated e a q = 'Validated e a q
 -- | Represents a concrete HTML field element with name @n@ and type @a@
 type Field n a = 'Field n a
 -- | Type level list of sub forms.
-type SubForm qs = 'SubForm qs
+type Fields qs = 'Fields qs
 
 -- Type functions --------------------------------------------------------------
 
@@ -101,19 +89,14 @@ type family Map (f :: k -> k') (qs :: [k]) :: [k'] where
   Map _ '[] = '[]
   Map f (q ': qs) = f q ': Map f qs
 
-
 -- | Extract a list of field names from a 'QuickForm'
 type family Names (q :: QuickForm) :: [Symbol] where
   Names (Validated e a q) = Names q
-  Names (Unvalidated a q) = Names q
   Names (Field n a) = '[n]
-  Names (SubForm qs) = Concat (MapNames qs)
+  Names (Fields qs) = Concat (MapNames qs)
 
-class UniqueConstraint (Names q) => Wf (q :: QuickForm)
-instance Wf q => Wf (Validated e a q)
-instance Wf q => Wf (Unvalidated a q)
-instance (UniqueConstraint (Concat (MapNames qs)), All Wf qs) => Wf (SubForm qs)
-instance Wf (Field n a)
+class Wf (q :: QuickForm)
+instance UniqueConstraint (Names q) => Wf q
 
 -- | Ensure that all elements in the list satisfy the given constraint
 type family All (f :: k -> Constraint) (as :: [k]) :: Constraint where

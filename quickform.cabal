@@ -14,68 +14,84 @@ cabal-version:       >=1.10
 extra-source-files: README.md
                   , LICENSE
 
-flag NoErrors
-  description: Turns off custom type errors
-  default: False
-
 library
-  default-language:    Haskell2010
-  hs-source-dirs:      src
-  ghc-options:         -Wall
-  if flag(NoErrors)
-    cpp-options:       -DNO_FANCY_ERRORS
+  default-language: Haskell2010
+  hs-source-dirs: src
+  ghc-options: -Wall
+  exposed-modules:
+      QuickForm
+    , QuickForm.Form
+    , QuickForm.TypeLevel
+    , QuickForm.Validation
+  build-depends:
+      base >= 4.9 && < 5
+    , aeson
+    , containers
+    , unordered-containers
+    , text
+    , vector
+    , data-default
+  default-extensions:
+      ConstraintKinds
+    , DataKinds
+    , FlexibleInstances
+    , FlexibleContexts
+    , MultiParamTypeClasses
+    , ScopedTypeVariables
+    , TypeApplications
+    , TypeOperators
 
-  exposed-modules:     QuickForm
-                     , QuickForm.Form
-                     , QuickForm.TypeLevel
-                     , QuickForm.Validation
-
-  build-depends:       base >= 4.9 && < 5
-                     , aeson
-                     , containers
-                     , unordered-containers
-                     , deepseq
-                     , lens
-                     , text
-                     , data-default
-
-  default-extensions:  ConstraintKinds
-                     , DataKinds
-                     , FlexibleInstances
-                     , FlexibleContexts
-                     , MultiParamTypeClasses
-                     , ScopedTypeVariables
-                     , TypeApplications
-                     , TypeOperators
+library quickform-example
+  default-language: Haskell2010
+  hs-source-dirs: example
+  exposed-modules:
+      QuickForm.Example
+    , QuickForm.Example.Forms
+    , QuickForm.Example.Types
+  build-depends:
+      base
+    , quickform
+    , aeson
+    , containers
+    , data-default
+    , either
+    , text
+    , unordered-containers
 
 test-suite quickform-test
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      test
-  main-is:             Spec.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  cpp-options:         -DNO_FANCY_ERRORS
-  -- Stack doesn't seem to use this, so use --flag quickform:NoErrors when
-  -- testing or you may get a lot of errors due to should-not-typecheck
+  type: exitcode-stdio-1.0
+  default-language: Haskell2010
+  hs-source-dirs: test
+  main-is: Spec.hs
+  other-modules:
+      QuickForm.Test.FormSpec
+    , QuickForm.Test.Orphans
+  ghc-options: -Wall
+  build-depends:
+      base
+    , quickform
+    , quickform-example
 
-  build-depends:       base
-                     , quickform
-                     , hspec
-                     , QuickCheck
-                     , containers
-                     , lens
-                     , text
-                     , should-not-typecheck
+    , aeson
+    , containers
+    , data-default
+    , either
+    , text
+    , unordered-containers
 
-test-suite README
-  type:                exitcode-stdio-1.0
-  default-language:    Haskell2010
-  hs-source-dirs:      .
-  main-is:             README.lhs
+    , hspec
+    , generic-arbitrary
+    , QuickCheck
+    , quickcheck-instances
 
-  build-depends:       base
-                     , quickform
-                     , containers
-                     , lens
-                     , text
+--test-suite README
+--  type:                exitcode-stdio-1.0
+--  default-language:    Haskell2010
+--  hs-source-dirs:      .
+--  main-is:             README.lhs
+--
+--  build-depends:       base
+--                     , quickform
+--                     , containers
+--                     , text
 

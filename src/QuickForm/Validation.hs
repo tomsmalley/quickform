@@ -19,117 +19,84 @@
 module QuickForm.Validation where
 
 import Data.Default
-import Data.Bifunctor (bimap)
-import Data.Proxy
-import Data.Set (Set)
-import Data.Text (Text)
 
 import QuickForm.Form
 import QuickForm.TypeLevel
 
 -- | Validation functions
-data FormVal (q :: QuickForm) where
-  ValidatedVal
-    :: (FormHs q -> Either e a) -> FormVal q
-    -> FormVal (Validated e a q)
-  UnvalidatedVal
-    :: (FormHs q -> a) -> FormVal q
-    -> FormVal (Unvalidated a q)
-  FieldVal :: FormVal (Field n a)
-  FormVal :: TList (Map FormVal qs) -> FormVal (SubForm qs)
+data Validator (q :: QuickForm) where
+  ValidatedVal :: (FormOutput q -> Either e a) -> Validator q -> Validator (Validated e a q)
+  FieldVal :: Validator (Field n a)
+  FieldsVal :: TList (Map Validator qs) -> Validator (Fields qs)
 
-class Wf q => ValidateForm q where
-  validateForm :: FormVal q -> FormRaw q -> ValResult q
+class ValidateForm q where
+  validateForm :: Validator q -> Form q -> Result q
 
-instance ValidateForm (Field n Text) where
-  validateForm FieldVal (FieldRaw raw) = Hs $ FieldHs raw
+instance FormOutput (Field n a) ~ ToForm (Field n a) => ValidateForm (Field n a) where
+  validateForm FieldVal (Form a) = Success a
   {-# INLINE validateForm #-}
 
-instance (Wf (SubForm qs), JoinSubForm qs, ValidateSubForm qs)
-  => ValidateForm (SubForm qs) where
-  validateForm fs as = joinSubForm $ validateSubForm fs as
+instance (JoinFields qs, ValidateFields qs)
+  => ValidateForm (Fields qs) where
+  validateForm fs as = joinFields $ validateFields fs as
   {-# INLINE validateForm #-}
 
-instance ValidateForm q => ValidateForm (Unvalidated a q) where
-  validateForm (UnvalidatedVal f sub) (UnvalidatedRaw b)
-    = runUnvalidated f $ validateForm sub b
-  {-# INLINE validateForm #-}
-
-instance (Default (FormErr q), ValidateForm q)
+instance (Default (FormError q), ValidateForm q)
   => ValidateForm (Validated e a q) where
-  validateForm (ValidatedVal f sub) (ValidatedRaw b)
-    = runValidated f $ validateForm sub b
+  validateForm (ValidatedVal f sub) (Form b)
+    = runValidated f $ validateForm sub $ Form b
   {-# INLINE validateForm #-}
 
-instance Default (FormVal (Field n a)) where
+instance Default (Validator (Field n a)) where
   def = FieldVal
-instance Default (TList (Map FormVal qs))
-  => Default (FormVal (SubForm qs)) where
-    def = FormVal def
+instance Default (TList (Map Validator qs))
+  => Default (Validator (Fields qs)) where
+    def = FieldsVal def
 
-class ValidateSubForm qs where
-  validateSubForm
-    :: FormVal (SubForm qs) -> FormRaw (SubForm qs) -> TList (Map ValResult qs)
+class ValidateFields qs where
+  validateFields
+    :: Validator (Fields qs) -> Form (Fields qs) -> TList (Map Result qs)
 
-instance ValidateSubForm '[] where
-  validateSubForm (FormVal Nil) (FormRaw Nil) = Nil
+instance ValidateFields '[] where
+  validateFields (FieldsVal Nil) (Form Nil) = Nil
 
 instance
-  ( ValidateForm q, ValidateSubForm qs
-  ) => ValidateSubForm (q ': qs) where
-    validateSubForm (FormVal (f :| fs)) (FormRaw (a :| as)) =
-      validateForm f a :| validateSubForm @qs (FormVal fs) (FormRaw as)
+  ( ValidateForm q, ValidateFields qs
+  ) => ValidateFields (q ': qs) where
+    validateFields (FieldsVal (f :| fs)) (Form (a :| as)) =
+      validateForm f (Form a) :| validateFields @qs (FieldsVal fs) (Form as)
 
 -- | Result of running a validation
-data ValResult q
-  = Err (FormErr q)
-  | Hs (FormHs q)
+data Result q
+  = Error (FormError q)
+  | Success (FormOutput q)
 
-deriving instance (Eq (FormErr q), Eq (FormHs q)) => Eq (ValResult q)
-deriving instance (Show (FormErr q), Show (FormHs q)) => Show (ValResult q)
+deriving instance (Eq (FormError q), Eq (FormOutput q)) => Eq (Result q)
+deriving instance (Show (FormError q), Show (FormOutput q)) => Show (Result q)
 
-valResult :: (FormErr q -> a) -> (FormHs q -> a) -> ValResult q -> a
-valResult f _ (Err e) = f e
-valResult _ f (Hs v) = f v
+class JoinFields qs where
+  joinFields :: TList (Map Result qs) -> Result (Fields qs)
 
-valErr :: ValResult q -> Maybe (FormErr q)
-valErr (Err e) = Just e
-valErr _ = Nothing
-
-valHs :: ValResult q -> Maybe (FormHs q)
-valHs (Hs v) = Just v
-valHs _ = Nothing
-
-class JoinSubForm qs where
-  joinSubForm :: TList (Map ValResult qs) -> ValResult (SubForm qs)
-
-instance JoinSubForm '[] where
-  joinSubForm Nil = Hs $ FormHs Nil
+instance JoinFields '[] where
+  joinFields Nil = Success Nil
 
 instance
-  ( Default (TList (Map FormErr qs))
-  , Default (FormErr q)
-  , JoinSubForm qs
-  ) => JoinSubForm (q ': qs) where
-    joinSubForm (e :| es) = case (e, joinSubForm @qs es) of
-      (Err e, Err (FormErr es)) -> Err $ FormErr $ e :| es
-      (Err e, _) -> Err $ FormErr $ e :| def
-      (_, Err (FormErr es)) -> Err $ FormErr $ def :| es
-      (Hs a, Hs (FormHs as)) -> Hs $ FormHs $ a :| as
-
-
-runUnvalidated :: (FormHs q -> a) -> ValResult q -> ValResult (Unvalidated a q)
-runUnvalidated f = \case
-  Err e -> Err $ UnvalidatedErr e
-  Hs hs -> Hs $ UnvalidatedHs $ f hs
+  ( Default (TList (Map FormError qs))
+  , Default (FormError q)
+  , JoinFields qs
+  ) => JoinFields (q ': qs) where
+    joinFields (e :| es) = case (e, joinFields @qs es) of
+      (Error e', Error (FieldsError es')) -> Error $ FieldsError $ e' :| es'
+      (Error e', _) -> Error $ FieldsError $ e' :| def
+      (_, Error (FieldsError es')) -> Error $ FieldsError $ def :| es'
+      (Success a, Success as) -> Success $ a :| as
 
 runValidated
-  :: (Default (FormErr q))
-  => (FormHs q -> Either e a) -> ValResult q -> ValResult (Validated e a q)
+  :: (Default (FormError q))
+  => (FormOutput q -> Either e a) -> Result q -> Result (Validated e a q)
 runValidated f q = case q of
-  Err e -> Err $ ValidatedErr Nothing e
-  Hs hs -> case f hs of
-    Left e -> Err $ ValidatedErr (Just e) def
-    Right a -> Hs $ ValidatedHs a
-
+  Error e -> Error $ ValidatedError Nothing e
+  Success hs -> case f hs of
+    Left e -> Error $ ValidatedError (Just e) def
+    Right a -> Success a
 
